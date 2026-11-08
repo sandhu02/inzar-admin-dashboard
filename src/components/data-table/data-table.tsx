@@ -7,6 +7,8 @@ import {
   getCoreRowModel,
   useReactTable,
   RowSelectionState,
+  VisibilityState,
+  OnChangeFn,
 } from '@tanstack/react-table';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -21,6 +23,8 @@ interface DataTableProps<TData, TValue> {
   onRowClick?: (row: TData) => void;
   rowSelection?: RowSelectionState;
   onRowSelectionChange?: React.Dispatch<React.SetStateAction<RowSelectionState>>;
+  columnVisibility?: VisibilityState;
+  onColumnVisibilityChange?: OnChangeFn<VisibilityState>;
   className?: string;
 }
 
@@ -33,6 +37,8 @@ export function DataTable<TData, TValue>({
   onRowClick,
   rowSelection = {},
   onRowSelectionChange,
+  columnVisibility = {},
+  onColumnVisibilityChange,
   className,
 }: DataTableProps<TData, TValue>) {
   'use no memo';
@@ -41,9 +47,11 @@ export function DataTable<TData, TValue>({
     columns,
     state: {
       rowSelection,
+      columnVisibility,
     },
     enableRowSelection: true,
     onRowSelectionChange,
+    onColumnVisibilityChange,
     getCoreRowModel: getCoreRowModel(),
   });
 

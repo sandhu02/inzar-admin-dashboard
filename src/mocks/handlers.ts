@@ -1,101 +1,26 @@
 import { http, HttpResponse } from 'msw';
+import { mockUsers, mockCategories } from './fixtures';
+import { mockIncidentsDataset } from './incidents-data';
 
-export const mockUsers = {
-  admin: {
-    id: 'usr_admin_001',
-    email: 'admin@inzar.app',
-    display_name: 'Sana Rehman',
-    role: 'admin',
-    is_suspended: false,
-    is_verified: true,
-    created_at: '2026-01-10T08:00:00Z',
-  },
-  moderator: {
-    id: 'usr_mod_002',
-    email: 'moderator@inzar.app',
-    display_name: 'Ali Khan',
-    role: 'moderator',
-    is_suspended: false,
-    is_verified: true,
-    created_at: '2026-02-15T10:30:00Z',
-  },
-  user: {
-    id: 'usr_user_003',
-    email: 'user@inzar.app',
-    display_name: 'Zahid Mahmood',
-    role: 'user',
-    is_suspended: false,
-    is_verified: false,
-    created_at: '2026-03-20T14:15:00Z',
-  },
-};
+export { mockUsers, mockCategories };
 
-export const mockCategories = [
-  {
-    id: 'cat_accident',
-    slug: 'accident',
-    name: 'Accident',
-    color_hex: '#FFC14D',
-    icon_key: 'alert-triangle',
-    is_active: true,
-    sort_order: 1,
-    urgency: 'high',
-  },
-  {
-    id: 'cat_road_block',
-    slug: 'road_block',
-    name: 'Road Block',
-    color_hex: '#E2DDD5',
-    icon_key: 'shield-alert',
-    is_active: true,
-    sort_order: 2,
-    urgency: 'routine',
-  },
-  {
-    id: 'cat_fire',
-    slug: 'fire',
-    name: 'Fire',
-    color_hex: '#FF6B2C',
-    icon_key: 'flame',
-    is_active: true,
-    sort_order: 3,
-    urgency: 'high',
-  },
-  {
-    id: 'cat_flooding',
-    slug: 'flooding',
-    name: 'Flooding',
-    color_hex: '#7CC4FF',
-    icon_key: 'droplets',
-    is_active: true,
-    sort_order: 4,
-    urgency: 'routine',
-  },
-  {
-    id: 'cat_gathering',
-    slug: 'gathering',
-    name: 'Gathering',
-    color_hex: '#A8A094',
-    icon_key: 'users',
-    is_active: true,
-    sort_order: 5,
-    urgency: 'routine',
-  },
-  {
-    id: 'cat_other',
-    slug: 'other',
-    name: 'Other',
-    color_hex: '#706B63',
-    icon_key: 'help-circle',
-    is_active: true,
-    sort_order: 6,
-    urgency: 'routine',
-  },
-];
+function getDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const R = 6371; // Earth's radius in km
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
 
 export const handlers = [
   // Auth login
-  http.post(/.*\/auth\/login$/, async ({ request }) => {
+  http.post(/.*\/auth\/login(\?|$)/, async ({ request }) => {
     const body = (await request.json()) as { email?: string; password?: string };
 
     if (body.password !== 'Password123!') {
@@ -152,7 +77,7 @@ export const handlers = [
   }),
 
   // Auth refresh
-  http.post(/.*\/auth\/refresh$/, async ({ request }) => {
+  http.post(/.*\/auth\/refresh(\?|$)/, async ({ request }) => {
     const body = (await request.json()) as { refresh_token?: string };
     if (!body.refresh_token || body.refresh_token.includes('invalid')) {
       return HttpResponse.json(
@@ -174,12 +99,12 @@ export const handlers = [
   }),
 
   // Auth logout
-  http.post(/.*\/auth\/logout$/, () => {
+  http.post(/.*\/auth\/logout(\?|$)/, () => {
     return HttpResponse.json({ success: true });
   }),
 
   // Get current user profile
-  http.get(/.*\/me$/, ({ request }) => {
+  http.get(/.*\/me(\?|$)/, ({ request }) => {
     const authHeader = request.headers.get('Authorization');
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return HttpResponse.json(
@@ -200,12 +125,12 @@ export const handlers = [
   }),
 
   // Categories list
-  http.get(/.*\/admin\/categories$/, () => {
+  http.get(/.*\/admin\/categories(\?|$)/, () => {
     return HttpResponse.json(mockCategories);
   }),
 
   // Overview stats
-  http.get(/.*\/admin\/stats\/overview$/, () => {
+  http.get(/.*\/admin\/stats\/overview(\?|$)/, () => {
     return HttpResponse.json({
       queue_size: 14,
       oldest_queue_item_age_minutes: 38,
@@ -216,6 +141,221 @@ export const handlers = [
       job_backlog_count: 27,
       active_users_count: 1284,
       alerts_sent_count: 3906,
+    });
+  }),
+
+  // Incidents list with filtering, sorting, and cursor pagination
+  http.get(/.*\/admin\/incidents(\?|$)/, ({ request }) => {
+    const authHeader = request.headers.get('Authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return HttpResponse.json(
+        {
+          error: {
+            code: 'UNAUTHORIZED',
+            message: 'Authentication credentials were not provided.',
+          },
+        },
+        { status: 401 }
+      );
+    }
+
+    const url = new URL(request.url);
+    const searchParams = url.searchParams;
+
+    const cursorParam = searchParams.get('cursor');
+    const limit = Math.min(
+      Math.max(1, Number(searchParams.get('limit')) || 25),
+      100
+    );
+    const q = searchParams.get('q')?.toLowerCase()?.trim();
+    const reviewStatusParam = searchParams.get('review_status');
+    const lifecycleStatusParam = searchParams.get('lifecycle_status');
+    const categoryIdParams = searchParams.getAll('category_id');
+    const flagged = searchParams.get('flagged');
+    const hasMedia = searchParams.get('has_media');
+    const removed = searchParams.get('removed');
+    const reporterId = searchParams.get('reporter_id');
+    const createdFrom = searchParams.get('created_from');
+    const createdTo = searchParams.get('created_to');
+    const near = searchParams.get('near');
+    const bbox = searchParams.get('bbox');
+    const sort = searchParams.get('sort') || 'reported_at:desc';
+
+    let items = [...mockIncidentsDataset];
+
+    // Filter: search text
+    if (q) {
+      items = items.filter(
+        (inc) =>
+          inc.title.toLowerCase().includes(q) ||
+          inc.description.toLowerCase().includes(q) ||
+          inc.place_label.toLowerCase().includes(q) ||
+          inc.id.toLowerCase().includes(q)
+      );
+    }
+
+    // Filter: review_status
+    if (reviewStatusParam) {
+      const statuses = reviewStatusParam
+        .split(',')
+        .map((s) => s.trim().toLowerCase());
+      items = items.filter((inc) =>
+        statuses.includes(inc.review_status.toLowerCase())
+      );
+    } else if (removed !== 'true') {
+      // Exclude soft-deleted incidents by default unless requested
+      items = items.filter((inc) => inc.review_status !== 'removed');
+    }
+
+    // Filter: lifecycle_status
+    if (lifecycleStatusParam) {
+      const statuses = lifecycleStatusParam
+        .split(',')
+        .map((s) => s.trim().toLowerCase());
+      items = items.filter((inc) =>
+        statuses.includes(inc.lifecycle_status.toLowerCase())
+      );
+    }
+
+    // Filter: category_id (supports comma-separated or multiple query params)
+    if (categoryIdParams.length > 0) {
+      const allowedCategories = categoryIdParams
+        .flatMap((c) => c.split(','))
+        .map((c) => c.trim().toLowerCase());
+      items = items.filter(
+        (inc) =>
+          allowedCategories.includes(inc.category.id.toLowerCase()) ||
+          allowedCategories.includes(inc.category.slug.toLowerCase())
+      );
+    }
+
+    // Filter: flagged
+    if (flagged === 'true') {
+      items = items.filter((inc) => inc.flags_count > 0);
+    } else if (flagged === 'false') {
+      items = items.filter((inc) => inc.flags_count === 0);
+    }
+
+    // Filter: has_media
+    if (hasMedia === 'true') {
+      items = items.filter((inc) => inc.has_media);
+    } else if (hasMedia === 'false') {
+      items = items.filter((inc) => !inc.has_media);
+    }
+
+    // Filter: reporter_id
+    if (reporterId) {
+      items = items.filter((inc) => inc.reporter_id === reporterId);
+    }
+
+    // Filter: created_from
+    if (createdFrom) {
+      const fromTime = new Date(createdFrom).getTime();
+      if (!isNaN(fromTime)) {
+        items = items.filter(
+          (inc) => new Date(inc.reported_at).getTime() >= fromTime
+        );
+      }
+    }
+
+    // Filter: created_to
+    if (createdTo) {
+      const toTime = new Date(createdTo).getTime();
+      if (!isNaN(toTime)) {
+        items = items.filter(
+          (inc) => new Date(inc.reported_at).getTime() <= toTime
+        );
+      }
+    }
+
+    // Filter: near (lat,lng,radius_km)
+    if (near) {
+      const [latStr, lngStr, radiusStr] = near.split(',');
+      const centerLat = Number(latStr);
+      const centerLng = Number(lngStr);
+      const radiusKm = Number(radiusStr);
+      if (!isNaN(centerLat) && !isNaN(centerLng) && !isNaN(radiusKm)) {
+        items = items.filter((inc) => {
+          const dist = getDistanceKm(
+            centerLat,
+            centerLng,
+            inc.fuzzed_location.lat,
+            inc.fuzzed_location.lng
+          );
+          return dist <= radiusKm;
+        });
+      }
+    }
+
+    // Filter: bbox (min_lon,min_lat,max_lon,max_lat)
+    if (bbox) {
+      const [minLon, minLat, maxLon, maxLat] = bbox.split(',').map(Number);
+      if (
+        minLon !== undefined &&
+        minLat !== undefined &&
+        maxLon !== undefined &&
+        maxLat !== undefined &&
+        !isNaN(minLon) &&
+        !isNaN(minLat) &&
+        !isNaN(maxLon) &&
+        !isNaN(maxLat)
+      ) {
+        items = items.filter(
+          (inc) =>
+            inc.fuzzed_location.lng >= minLon &&
+            inc.fuzzed_location.lng <= maxLon &&
+            inc.fuzzed_location.lat >= minLat &&
+            inc.fuzzed_location.lat <= maxLat
+        );
+      }
+    }
+
+    // Sorting
+    const [sortField, sortDirection] = sort.split(':');
+    items.sort((a, b) => {
+      let comparison = 0;
+      if (sortField === 'reported_at') {
+        comparison =
+          new Date(a.reported_at).getTime() - new Date(b.reported_at).getTime();
+      } else if (sortField === 'flags_count' || sortField === 'flag_count') {
+        comparison = a.flags_count - b.flags_count;
+      } else if (sortField === 'status' || sortField === 'review_status') {
+        comparison = a.review_status.localeCompare(b.review_status);
+      } else if (sortField === 'title') {
+        comparison = a.title.localeCompare(b.title);
+      } else {
+        comparison =
+          new Date(a.reported_at).getTime() - new Date(b.reported_at).getTime();
+      }
+      return sortDirection === 'asc' ? comparison : -comparison;
+    });
+
+    const totalCount = items.length;
+
+    // Pagination with offset-based cursor
+    let offset = 0;
+    if (cursorParam) {
+      const parsedOffset = parseInt(cursorParam, 10);
+      if (!isNaN(parsedOffset) && parsedOffset >= 0) {
+        offset = parsedOffset;
+      }
+    }
+
+    const pagedItems = items.slice(offset, offset + limit);
+    const nextOffset = offset + limit < totalCount ? offset + limit : null;
+    const prevOffset = offset > 0 ? Math.max(0, offset - limit) : null;
+
+    // Privacy Rule: strip reporter_id and exact location
+    const sanitizedItems = pagedItems.map(
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      ({ reporter_id, ...item }) => item
+    );
+
+    return HttpResponse.json({
+      items: sanitizedItems,
+      next_cursor: nextOffset !== null ? String(nextOffset) : null,
+      prev_cursor: prevOffset !== null ? String(prevOffset) : null,
+      total_count: totalCount,
     });
   }),
 ];

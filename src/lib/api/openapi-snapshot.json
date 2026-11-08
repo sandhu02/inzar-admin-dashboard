@@ -139,7 +139,15 @@
           { "name": "review_status", "in": "query", "schema": { "type": "string" } },
           { "name": "lifecycle_status", "in": "query", "schema": { "type": "string" } },
           { "name": "category_id", "in": "query", "schema": { "type": "string" } },
-          { "name": "flagged", "in": "query", "schema": { "type": "boolean" } }
+          { "name": "flagged", "in": "query", "schema": { "type": "boolean" } },
+          { "name": "created_from", "in": "query", "schema": { "type": "string", "format": "date-time" } },
+          { "name": "created_to", "in": "query", "schema": { "type": "string", "format": "date-time" } },
+          { "name": "has_media", "in": "query", "schema": { "type": "boolean" } },
+          { "name": "removed", "in": "query", "schema": { "type": "boolean" } },
+          { "name": "near", "in": "query", "schema": { "type": "string" } },
+          { "name": "bbox", "in": "query", "schema": { "type": "string" } },
+          { "name": "sort", "in": "query", "schema": { "type": "string" } },
+          { "name": "reporter_id", "in": "query", "schema": { "type": "string" } }
         ],
         "responses": {
           "200": {
@@ -154,6 +162,7 @@
                       "items": { "$ref": "#/components/schemas/Incident" }
                     },
                     "next_cursor": { "type": "string", "nullable": true },
+                    "prev_cursor": { "type": "string", "nullable": true },
                     "total_count": { "type": "integer" }
                   },
                   "required": ["items", "total_count"]

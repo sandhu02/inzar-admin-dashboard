@@ -49,7 +49,7 @@ test.describe('Phase 1: Authentication and App Shell', () => {
 
     // Verify user card in sidebar
     await expect(page.locator('aside').getByText('Sana Rehman')).toBeVisible();
-    await expect(page.locator('aside').getByRole('button', { name: 'User account menu' })).toContainText('admin');
+    await expect(page.locator('aside').getByRole('button', { name: /User account menu/i })).toContainText('admin');
 
     // Verify ADMIN section exists in sidebar nav
     await expect(page.locator('aside').getByText('ADMIN', { exact: true })).toBeVisible();
@@ -140,7 +140,7 @@ test.describe('Phase 1: Authentication and App Shell', () => {
     }
 
     // Open user menu
-    await page.locator('aside').getByRole('button', { name: 'User account menu' }).click();
+    await page.locator('aside').getByRole('button', { name: /User account menu/i }).click();
     await page.getByRole('menuitem', { name: 'Sign out' }).click();
 
     await expect(page).toHaveURL('/login');

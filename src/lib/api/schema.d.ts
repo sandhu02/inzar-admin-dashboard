@@ -319,6 +319,14 @@ export interface operations {
                 lifecycle_status?: string;
                 category_id?: string;
                 flagged?: boolean;
+                created_from?: string;
+                created_to?: string;
+                has_media?: boolean;
+                removed?: boolean;
+                near?: string;
+                bbox?: string;
+                sort?: string;
+                reporter_id?: string;
             };
             header?: never;
             path?: never;
@@ -335,6 +343,7 @@ export interface operations {
                     "application/json": {
                         items: components["schemas"]["Incident"][];
                         next_cursor?: string | null;
+                        prev_cursor?: string | null;
                         total_count: number;
                     };
                 };

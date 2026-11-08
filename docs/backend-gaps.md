@@ -133,3 +133,40 @@ Until backend updates are published, these contracts are implemented via MSW han
     }
   }
   ```
+
+---
+
+## 4. Admin User Preferences & Saved Views
+
+### `GET /admin/me/preferences`
+- **Method**: GET
+- **Description**: Returns per-staff preferences including saved views and column visibility settings. Currently persisted client-side in `localStorage` (`inzar_incident_saved_views`, `inzar_incident_column_visibility`).
+- **Response Shape**:
+  ```json
+  {
+    "saved_views": [
+      {
+        "id": "view_123",
+        "name": "Margalla High Risk",
+        "filters": {
+          "category": "fire,landslide",
+          "near_lat": 33.7294,
+          "near_lng": 73.0551,
+          "radius_km": 15
+        },
+        "is_default": true,
+        "created_at": "2026-11-08T12:00:00Z"
+      }
+    ],
+    "column_visibility": {
+      "flags_count": true,
+      "place_label": true,
+      "age": true
+    }
+  }
+  ```
+
+### `PUT /admin/me/preferences`
+- **Method**: PUT
+- **Description**: Updates admin user preferences and saved filter presets.
+- **Body**: Same shape as preferences response.

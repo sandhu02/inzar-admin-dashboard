@@ -1,10 +1,22 @@
 import * as React from 'react';
+import { IncidentsLedger } from '@/features/incidents/components/incidents-ledger';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export default function IncidentsPage() {
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-bold font-sans text-foreground">Incidents</h1>
-      <p className="text-sm text-muted-foreground">Comprehensive incident ledger and filters (Phase 2 integration).</p>
-    </div>
+    <React.Suspense
+      fallback={
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <Skeleton className="h-8 w-40" />
+            <Skeleton className="h-9 w-32" />
+          </div>
+          <Skeleton className="h-12 w-full rounded-xl" />
+          <Skeleton className="h-96 w-full rounded-xl" />
+        </div>
+      }
+    >
+      <IncidentsLedger />
+    </React.Suspense>
   );
 }

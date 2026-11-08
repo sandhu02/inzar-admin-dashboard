@@ -46,9 +46,12 @@ export function UserMenu({ user, collapsed = false }: UserMenuProps) {
       <DropdownMenuTrigger asChild>
         <button
           className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-surface-elevated transition-colors text-left focus:outline-none focus:ring-1 focus:ring-accent group cursor-pointer"
-          aria-label="User account menu"
         >
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-surface-elevated border border-border text-xs font-mono font-bold text-foreground group-hover:border-accent/40 transition-colors">
+          <span className="sr-only">User account menu</span>
+          <div
+            aria-hidden="true"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-surface-elevated border border-border text-xs font-mono font-bold text-foreground group-hover:border-accent/40 transition-colors"
+          >
             {initials}
           </div>
           {!collapsed && (
