@@ -7,6 +7,7 @@ import {
   clearSessionCookie,
 } from '@/lib/auth/session';
 import { refreshSingleFlight } from '@/lib/auth/refresh';
+import { queryMockIncidents } from '@/mocks/handlers';
 
 type RouteContext = {
   params: Promise<{ path: string[] }>;
@@ -65,6 +66,13 @@ async function handleProxy(req: NextRequest, { params }: RouteContext) {
     }
   }
 
+  // In mock mode, immediately serve mock data for endpoints not yet on the backend
+  if (env.NEXT_PUBLIC_USE_MOCKS) {
+    if (pathString === 'admin/incidents' && method === 'GET') {
+      return NextResponse.json(queryMockIncidents(req.nextUrl.searchParams));
+    }
+  }
+
   // 3. Check if access token is expired or close to expiry (within 30 seconds)
   let updatedSessionToken: string | null = null;
   const isExpiringSoon = session.expiresAt - Date.now() < 30 * 1000;
@@ -101,11 +109,33 @@ async function handleProxy(req: NextRequest, { params }: RouteContext) {
     }
   }
 
-  let backendRes = await fetch(targetUrl, {
-    method,
-    headers: forwardHeaders,
-    body,
-  });
+  let backendRes: Response;
+  try {
+    backendRes = await fetch(targetUrl, {
+      method,
+      headers: forwardHeaders,
+      body,
+    });
+  } catch (fetchErr) {
+    // Graceful fallback for documented gaps when backend is unreachable
+    if (pathString === 'admin/incidents' && method === 'GET') {
+      console.warn(
+        '[BFF Proxy] Backend fetch failed for GET /admin/incidents. Serving mock fallback.',
+        fetchErr
+      );
+      return NextResponse.json(queryMockIncidents(req.nextUrl.searchParams));
+    }
+    throw fetchErr;
+  }
+
+  // Fallback for documented backend contract gaps
+  // When FastAPI returns 404 for GET /api/v1/admin/incidents (documented in docs/backend-gaps.md)
+  if (pathString === 'admin/incidents' && method === 'GET' && backendRes.status === 404) {
+    console.warn(
+      '[BFF Proxy] Backend returned 404 for GET /api/v1/admin/incidents (known gap). Serving mock dataset fallback.'
+    );
+    return NextResponse.json(queryMockIncidents(req.nextUrl.searchParams));
+  }
 
   // 5. If backend returns 401, attempt emergency single-flight refresh and retry once
   if (backendRes.status === 401 && session.refreshToken) {
@@ -125,6 +155,10 @@ async function handleProxy(req: NextRequest, { params }: RouteContext) {
         headers: forwardHeaders,
         body,
       });
+
+      if (pathString === 'admin/incidents' && method === 'GET' && backendRes.status === 404) {
+        return NextResponse.json(queryMockIncidents(req.nextUrl.searchParams));
+      }
     } catch {
       // Refresh failed, session invalid
       const response = NextResponse.json(
