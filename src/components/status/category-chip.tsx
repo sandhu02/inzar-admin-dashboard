@@ -38,6 +38,12 @@ const CATEGORY_MAP: Record<string, CategoryGlyphConfig> = {
     defaultColor: '#E2DDD5',
     shapeClass: 'text-[9px]',
   },
+  road_blockage: {
+    glyph: '■',
+    icon: ShieldAlert,
+    defaultColor: '#EAB308',
+    shapeClass: 'text-[9px]',
+  },
   fire: {
     glyph: '●',
     icon: Flame,
@@ -56,10 +62,22 @@ const CATEGORY_MAP: Record<string, CategoryGlyphConfig> = {
     defaultColor: '#A8A094',
     shapeClass: 'text-[10px]',
   },
+  public_gathering: {
+    glyph: '⬬',
+    icon: Users,
+    defaultColor: '#8B5CF6',
+    shapeClass: 'text-[10px]',
+  },
   other: {
     glyph: '●',
     icon: HelpCircle,
     defaultColor: '#706B63',
+    shapeClass: 'text-[9px]',
+  },
+  other_hazard: {
+    glyph: '●',
+    icon: HelpCircle,
+    defaultColor: '#6B7280',
     shapeClass: 'text-[9px]',
   },
 };

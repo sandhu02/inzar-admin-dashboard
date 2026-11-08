@@ -54,6 +54,18 @@ const STATUS_CONFIGS: Record<string, StatusConfig> = {
     variant: 'warning',
     classes: 'border-status-warning/30 bg-status-warning/10 text-status-warning',
   },
+  checking: {
+    label: 'Checking',
+    icon: Clock,
+    variant: 'warning',
+    classes: 'border-status-warning/30 bg-status-warning/10 text-status-warning',
+  },
+  awaiting_media: {
+    label: 'Awaiting media',
+    icon: Clock,
+    variant: 'info',
+    classes: 'border-status-info/30 bg-status-info/10 text-status-info',
+  },
   needs_review: {
     label: 'Under review',
     icon: Clock,
@@ -65,6 +77,12 @@ const STATUS_CONFIGS: Record<string, StatusConfig> = {
     icon: CheckCircle2,
     variant: 'success',
     classes: 'border-status-success/30 bg-status-success/10 text-status-success',
+  },
+  rejected: {
+    label: 'Rejected',
+    icon: XCircle,
+    variant: 'danger',
+    classes: 'border-status-danger/30 bg-status-danger/10 text-status-danger',
   },
   not_approved: {
     label: 'Not approved',
