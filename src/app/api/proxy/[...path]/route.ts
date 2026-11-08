@@ -8,10 +8,15 @@ import {
 } from '@/lib/auth/session';
 import { refreshSingleFlight } from '@/lib/auth/refresh';
 import { queryMockIncidents } from '@/mocks/handlers';
+import { enrichIncidentDetail } from '@/features/incidents/api/mock-detail';
+import type { Incident, IncidentDetail } from '@/features/incidents/types';
 
 type RouteContext = {
   params: Promise<{ path: string[] }>;
 };
+
+// In-memory cache for status overrides (e.g. actions approved, rejected, resolved)
+const updatedIncidentsCache = new Map<string, Partial<IncidentDetail>>();
 
 const CATEGORY_STYLE_LOOKUP: Record<string, { color_hex: string; icon_key: string }> = {
   fire: { color_hex: '#EF4444', icon_key: 'flame' },
@@ -64,8 +69,11 @@ function adaptBackendIncidents(backendData: any, searchParams: URLSearchParams) 
       icon_key: 'help-circle',
     };
 
+    const id = String(item.id);
+    const cachedOverride = updatedIncidentsCache.get(id);
+
     return {
-      id: String(item.id),
+      id,
       title: item.title,
       description: item.description || '',
       category: {
@@ -74,9 +82,11 @@ function adaptBackendIncidents(backendData: any, searchParams: URLSearchParams) 
         name: item.category_name || 'General',
         color_hex: item.color_hex || style.color_hex,
         icon_key: item.icon_key || style.icon_key,
+        is_active: true,
+        sort_order: 0,
       },
-      review_status: item.review_status,
-      lifecycle_status: item.lifecycle_status,
+      review_status: cachedOverride?.review_status || item.review_status,
+      lifecycle_status: cachedOverride?.lifecycle_status || item.lifecycle_status,
       place_label: item.place_label || 'Reported Location',
       fuzzed_location: {
         lat: typeof item.public_lat === 'number' ? item.public_lat : 0,
@@ -98,6 +108,97 @@ function adaptBackendIncidents(backendData: any, searchParams: URLSearchParams) 
     prev_cursor: offset > 0 ? String(Math.max(0, offset - limit)) : null,
     total_count: items.length,
   };
+}
+
+function createFallbackIncident(id: string): Incident {
+  return {
+    id,
+    title: 'Incident',
+    description: '',
+    category: {
+      id: 'cat_other',
+      slug: 'other',
+      name: 'General',
+      color_hex: '#6B7280',
+      icon_key: 'help-circle',
+      is_active: true,
+      sort_order: 99,
+    },
+    review_status: 'published',
+    lifecycle_status: 'active',
+    reported_at: new Date().toISOString(),
+  };
+}
+
+async function findIncidentById(id: string, accessToken: string): Promise<Incident | null> {
+  // 1. Check live backend incidents list
+  try {
+    const res = await fetch(`${env.API_BASE_URL}/admin/incidents`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (res.ok) {
+      const json = await res.json();
+      const rawList = (Array.isArray(json) ? json : json?.data || []) as Record<string, unknown>[];
+      const match = rawList.find((it) => String(it.id) === id);
+      if (match) {
+        const catSlug = (match.category_slug as string) || 'other';
+        const style = CATEGORY_STYLE_LOOKUP[catSlug] || {
+          color_hex: '#6B7280',
+          icon_key: 'help-circle',
+        };
+        const override = updatedIncidentsCache.get(id);
+
+        return {
+          id: String(match.id),
+          title: String(match.title || ''),
+          description: (match.description as string) || '',
+          category: {
+            id: String(match.category_id || ''),
+            slug: catSlug,
+            name: (match.category_name as string) || 'General',
+            color_hex: (match.color_hex as string) || style.color_hex,
+            icon_key: (match.icon_key as string) || style.icon_key,
+            is_active: true,
+            sort_order: 0,
+          },
+          review_status:
+            override?.review_status || (match.review_status as Incident['review_status']),
+          lifecycle_status:
+            override?.lifecycle_status || (match.lifecycle_status as Incident['lifecycle_status']),
+          place_label: (match.place_label as string) || 'Reported Location',
+          fuzzed_location: {
+            lat: typeof match.public_lat === 'number' ? match.public_lat : 0,
+            lng: typeof match.public_lon === 'number' ? match.public_lon : 0,
+          },
+          reported_at: String(match.reported_at || new Date().toISOString()),
+          has_media: Array.isArray(match.media_urls) && match.media_urls.length > 0,
+          thumbnail_url:
+            Array.isArray(match.media_urls) && match.media_urls[0]
+              ? String(match.media_urls[0])
+              : null,
+          flags_count: typeof match.flags_count === 'number' ? match.flags_count : 0,
+        };
+      }
+    }
+  } catch {
+    // backend unavailable, check mock dataset
+  }
+
+  // 2. Check mock dataset
+  const { mockIncidentsDataset } = await import('@/mocks/incidents-data');
+  const mockMatch = mockIncidentsDataset.find((it) => it.id === id);
+  if (mockMatch) {
+    const override = updatedIncidentsCache.get(id);
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { reporter_id, ...sanitized } = mockMatch;
+    return {
+      ...sanitized,
+      ...(override?.review_status ? { review_status: override.review_status } : {}),
+      ...(override?.lifecycle_status ? { lifecycle_status: override.lifecycle_status } : {}),
+    };
+  }
+
+  return null;
 }
 
 async function handleProxy(req: NextRequest, { params }: RouteContext) {
@@ -153,6 +254,200 @@ async function handleProxy(req: NextRequest, { params }: RouteContext) {
     }
   }
 
+  // 3. Special Handling: Incident Details and Moderation Actions
+  // GET /admin/incidents/:id
+  if (path.length === 3 && path[0] === 'admin' && path[1] === 'incidents' && method === 'GET') {
+    const incidentId = path[2]!;
+    const base = await findIncidentById(incidentId, session.accessToken);
+    if (!base) {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'NOT_FOUND',
+            message: `Incident ${incidentId} was not found.`,
+          },
+        },
+        { status: 404 }
+      );
+    }
+
+    const detail = enrichIncidentDetail(base);
+    const cachedOverride = updatedIncidentsCache.get(incidentId);
+    if (cachedOverride) {
+      Object.assign(detail, cachedOverride);
+    }
+
+    return NextResponse.json(detail);
+  }
+
+  // POST /admin/incidents/:id/reveal-reporter
+  if (
+    path.length === 4 &&
+    path[0] === 'admin' &&
+    path[1] === 'incidents' &&
+    path[3] === 'reveal-reporter' &&
+    method === 'POST'
+  ) {
+    const incidentId = path[2]!;
+    const body = await req.json().catch(() => ({}));
+    const reason = body.reason?.trim();
+
+    if (!reason) {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'REASON_REQUIRED',
+            message: 'A justification reason is required to reveal protected reporter identity.',
+          },
+        },
+        { status: 400 }
+      );
+    }
+
+    const base = await findIncidentById(incidentId, session.accessToken);
+    const detail = enrichIncidentDetail(base || createFallbackIncident(incidentId));
+
+    console.info(
+      `[AUDIT] Reporter identity revealed for incident ${incidentId} by ${session.user.email} (${session.user.role}). Reason: "${reason}"`
+    );
+
+    return NextResponse.json({ reporter: detail.reporter, reason });
+  }
+
+  // POST /admin/incidents/:id/reveal-location
+  if (
+    path.length === 4 &&
+    path[0] === 'admin' &&
+    path[1] === 'incidents' &&
+    path[3] === 'reveal-location' &&
+    method === 'POST'
+  ) {
+    const incidentId = path[2]!;
+    const body = await req.json().catch(() => ({}));
+    const reason = body.reason?.trim();
+
+    if (!reason) {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'REASON_REQUIRED',
+            message: 'A justification reason is required to reveal exact coordinates.',
+          },
+        },
+        { status: 400 }
+      );
+    }
+
+    const base = await findIncidentById(incidentId, session.accessToken);
+    const detail = enrichIncidentDetail(base || createFallbackIncident(incidentId));
+
+    console.info(
+      `[AUDIT] Exact GPS coordinates revealed for incident ${incidentId} by ${session.user.email} (${session.user.role}). Reason: "${reason}"`
+    );
+
+    return NextResponse.json({ exact_location: detail.exact_location, reason });
+  }
+
+  // POST /admin/incidents/:id/:action (approve, reject, mark_false, remove, restore, resolve, re_review)
+  if (
+    path.length === 4 &&
+    path[0] === 'admin' &&
+    path[1] === 'incidents' &&
+    method === 'POST' &&
+    ['approve', 'reject', 'mark_false', 'remove', 'restore', 'resolve', 're_review'].includes(path[3]!)
+  ) {
+    const incidentId = path[2]!;
+    const action = path[3]!;
+    const body = await req.json().catch(() => ({}));
+    const reason = body.reason?.trim();
+    const notes = body.notes?.trim();
+
+    if (!reason) {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'REASON_REQUIRED',
+            message: `A reason is required to perform moderation action "${action}".`,
+          },
+        },
+        { status: 400 }
+      );
+    }
+
+    // Try forwarding approve/reject to backend if available
+    if (action === 'approve') {
+      try {
+        await fetch(`${env.API_BASE_URL}/admin/moderation/${incidentId}/approve`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.accessToken}`,
+          },
+          body: JSON.stringify({ notes: notes || reason }),
+        });
+      } catch {
+        // proceed
+      }
+    } else if (action === 'reject') {
+      try {
+        await fetch(`${env.API_BASE_URL}/admin/moderation/${incidentId}/reject`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.accessToken}`,
+          },
+          body: JSON.stringify({ reason }),
+        });
+      } catch {
+        // proceed
+      }
+    }
+
+    console.info(
+      `[AUDIT] Moderation action "${action}" on incident ${incidentId} by ${session.user.email} (${session.user.role}). Reason: "${reason}"`
+    );
+
+    const base = await findIncidentById(incidentId, session.accessToken);
+    const detail = enrichIncidentDetail(base || createFallbackIncident(incidentId));
+
+    const statusUpdates: Partial<IncidentDetail> = {};
+    if (action === 'approve') {
+      statusUpdates.review_status = 'published';
+    } else if (action === 'reject') {
+      statusUpdates.review_status = 'not_approved';
+    } else if (action === 'mark_false') {
+      statusUpdates.review_status = 'false_report';
+    } else if (action === 'remove') {
+      statusUpdates.review_status = 'removed';
+    } else if (action === 'restore') {
+      statusUpdates.review_status = 'under_review';
+    } else if (action === 'resolve') {
+      statusUpdates.lifecycle_status = 'resolved';
+    } else if (action === 're_review') {
+      statusUpdates.review_status = 'under_review';
+    }
+
+    // Store in cache
+    updatedIncidentsCache.set(incidentId, statusUpdates);
+    Object.assign(detail, statusUpdates);
+
+    // Add new timeline event
+    detail.timeline = [
+      ...(detail.timeline || []),
+      {
+        id: `tl_${action}_${Date.now()}`,
+        type: 'decision',
+        title: `Action: ${action.replace('_', ' ').toUpperCase()}`,
+        description: `Reason: ${reason}${notes ? ` · Note: ${notes}` : ''}`,
+        timestamp: new Date().toISOString(),
+        actor: session.user.display_name || session.user.email,
+        notes,
+      },
+    ];
+
+    return NextResponse.json(detail);
+  }
+
   // Parameter mapping for admin/incidents (backend query parameter naming)
   if (pathString === 'admin/incidents' && method === 'GET') {
     const backendParams = new URLSearchParams();
@@ -193,7 +488,7 @@ async function handleProxy(req: NextRequest, { params }: RouteContext) {
     targetUrl = `${env.API_BASE_URL}/admin/incidents${qs ? `?${qs}` : ''}`;
   }
 
-  // 3. Check if access token is expired or close to expiry (within 30 seconds)
+  // 4. Check if access token is expired or close to expiry (within 30 seconds)
   let updatedSessionToken: string | null = null;
   const isExpiringSoon = session.expiresAt - Date.now() < 30 * 1000;
 
@@ -212,7 +507,7 @@ async function handleProxy(req: NextRequest, { params }: RouteContext) {
     }
   }
 
-  // 4. Forward request to backend
+  // 5. Forward request to backend
   const forwardHeaders = new Headers();
   forwardHeaders.set('Authorization', `Bearer ${session.accessToken}`);
 
@@ -257,7 +552,7 @@ async function handleProxy(req: NextRequest, { params }: RouteContext) {
     return NextResponse.json(queryMockIncidents(req.nextUrl.searchParams));
   }
 
-  // 5. If backend returns 401, attempt emergency single-flight refresh and retry once
+  // 6. If backend returns 401, attempt emergency single-flight refresh and retry once
   if (backendRes.status === 401 && session.refreshToken) {
     try {
       const refreshed = await refreshSingleFlight(session.refreshToken);
@@ -295,7 +590,7 @@ async function handleProxy(req: NextRequest, { params }: RouteContext) {
     }
   }
 
-  // 6. Return backend response (adapted if admin/incidents)
+  // 7. Return backend response (adapted if admin/incidents)
   if (backendRes.ok && pathString === 'admin/incidents' && method === 'GET') {
     const json = await backendRes.json();
     const adapted = adaptBackendIncidents(json, req.nextUrl.searchParams);

@@ -1,6 +1,7 @@
 import { http, HttpResponse } from 'msw';
 import { mockUsers, mockCategories } from './fixtures';
 import { mockIncidentsDataset } from './incidents-data';
+import { enrichIncidentDetail } from '../features/incidents/api/mock-detail';
 
 export { mockUsers, mockCategories };
 
@@ -361,4 +362,154 @@ export const handlers = [
     const result = queryMockIncidents(url.searchParams);
     return HttpResponse.json(result);
   }),
+
+  // Reveal reporter profile with audited reason
+  http.post(
+    /.*\/admin\/incidents\/([a-zA-Z0-9_-]+)\/reveal-reporter(\?|$)/,
+    async ({ request, params }) => {
+      const authHeader = request.headers.get('Authorization');
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return HttpResponse.json(
+          { error: { code: 'UNAUTHORIZED', message: 'Authentication required' } },
+          { status: 401 }
+        );
+      }
+      const id = params[0] as string;
+      const body = (await request.json().catch(() => ({}))) as {
+        reason?: string;
+      };
+      if (!body?.reason || body.reason.trim().length === 0) {
+        return HttpResponse.json(
+          {
+            error: {
+              code: 'BAD_REQUEST',
+              message: 'Audit reason is required to reveal reporter details.',
+            },
+          },
+          { status: 400 }
+        );
+      }
+      const incident = mockIncidentsDataset.find((inc) => inc.id === id);
+      if (!incident) {
+        return HttpResponse.json(
+          { error: { code: 'NOT_FOUND', message: 'Incident not found' } },
+          { status: 404 }
+        );
+      }
+      const detail = enrichIncidentDetail(incident);
+      return HttpResponse.json(detail.reporter);
+    }
+  ),
+
+  // Reveal exact GPS coordinates with audited reason
+  http.post(
+    /.*\/admin\/incidents\/([a-zA-Z0-9_-]+)\/reveal-location(\?|$)/,
+    async ({ request, params }) => {
+      const authHeader = request.headers.get('Authorization');
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return HttpResponse.json(
+          { error: { code: 'UNAUTHORIZED', message: 'Authentication required' } },
+          { status: 401 }
+        );
+      }
+      const id = params[0] as string;
+      const body = (await request.json().catch(() => ({}))) as {
+        reason?: string;
+      };
+      if (!body?.reason || body.reason.trim().length === 0) {
+        return HttpResponse.json(
+          {
+            error: {
+              code: 'BAD_REQUEST',
+              message: 'Audit reason is required to reveal exact GPS coordinates.',
+            },
+          },
+          { status: 400 }
+        );
+      }
+      const incident = mockIncidentsDataset.find((inc) => inc.id === id);
+      if (!incident) {
+        return HttpResponse.json(
+          { error: { code: 'NOT_FOUND', message: 'Incident not found' } },
+          { status: 404 }
+        );
+      }
+      const detail = enrichIncidentDetail(incident);
+      return HttpResponse.json(detail.exact_location);
+    }
+  ),
+
+  // Perform moderation action on incident
+  http.post(
+    /.*\/admin\/incidents\/([a-zA-Z0-9_-]+)\/(approve|reject|mark_false|remove|restore|resolve|re_review)(\?|$)/,
+    async ({ request, params }) => {
+      const authHeader = request.headers.get('Authorization');
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return HttpResponse.json(
+          { error: { code: 'UNAUTHORIZED', message: 'Authentication required' } },
+          { status: 401 }
+        );
+      }
+      const id = params[0] as string;
+      const action = params[1] as string;
+      const body = (await request.json().catch(() => ({}))) as {
+        reason?: string;
+        notes?: string;
+      };
+      if (!body?.reason || body.reason.trim().length === 0) {
+        return HttpResponse.json(
+          {
+            error: {
+              code: 'BAD_REQUEST',
+              message: `Reason is required for action '${action}'.`,
+            },
+          },
+          { status: 400 }
+        );
+      }
+      const incident = mockIncidentsDataset.find((inc) => inc.id === id);
+      if (!incident) {
+        return HttpResponse.json(
+          { error: { code: 'NOT_FOUND', message: 'Incident not found' } },
+          { status: 404 }
+        );
+      }
+
+      const updated = { ...incident };
+      if (action === 'approve') updated.review_status = 'published';
+      else if (action === 'reject') updated.review_status = 'not_approved';
+      else if (action === 'mark_false') updated.review_status = 'false_report';
+      else if (action === 'remove') updated.review_status = 'removed';
+      else if (action === 'restore') updated.review_status = 'under_review';
+      else if (action === 'resolve') updated.lifecycle_status = 'resolved';
+      else if (action === 're_review') updated.review_status = 'under_review';
+
+      const detail = enrichIncidentDetail(updated);
+      return HttpResponse.json(detail);
+    }
+  ),
+
+  // Get incident detail by ID
+  http.get(
+    /.*\/admin\/incidents\/([a-zA-Z0-9_-]+)(\?|$)/,
+    ({ request, params }) => {
+      const authHeader = request.headers.get('Authorization');
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return HttpResponse.json(
+          { error: { code: 'UNAUTHORIZED', message: 'Authentication required' } },
+          { status: 401 }
+        );
+      }
+      const id = params[0] as string;
+      const incident = mockIncidentsDataset.find((inc) => inc.id === id);
+      if (!incident) {
+        return HttpResponse.json(
+          { error: { code: 'NOT_FOUND', message: 'Incident not found' } },
+          { status: 404 }
+        );
+      }
+      const detail = enrichIncidentDetail(incident);
+      return HttpResponse.json(detail);
+    }
+  ),
 ];

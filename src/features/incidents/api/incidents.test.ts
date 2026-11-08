@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { fetchIncidents } from './incidents';
+import {
+  fetchIncidents,
+  fetchIncidentDetail,
+  revealReporter,
+  revealExactLocation,
+  performIncidentAction,
+} from './incidents';
 
 describe('fetchIncidents API integration with MSW', () => {
   it('fetches default paginated list of incidents without private fields', async () => {
@@ -128,5 +134,87 @@ describe('fetchIncidents API integration with MSW', () => {
     expect(page2.prev_cursor).toBe('0');
     expect(page2.next_cursor).toBe('20');
     expect(page2.items[0]?.id).not.toBe(page1.items[0]?.id);
+  });
+});
+
+describe('Incident detail, audited reveals, and moderation actions API', () => {
+  const targetId = 'inc_001';
+
+  it('fetches complete incident detail including timeline and flags', async () => {
+    const detail = await fetchIncidentDetail(targetId);
+
+    expect(detail.id).toBe(targetId);
+    expect(detail.title).toBeDefined();
+    expect(detail.timeline).toBeInstanceOf(Array);
+    expect(detail.timeline?.length).toBeGreaterThan(0);
+    expect(detail.fuzzed_location).toHaveProperty('lat');
+    expect(detail.fuzzed_location).toHaveProperty('lng');
+  });
+
+  it('throws error when fetching non-existent incident', async () => {
+    await expect(fetchIncidentDetail('non_existent_id')).rejects.toThrow();
+  });
+
+  it('requires a reason when revealing reporter identity', async () => {
+    await expect(revealReporter(targetId, '')).rejects.toThrow(
+      'Audit reason is required'
+    );
+  });
+
+  it('reveals reporter profile when valid audit reason is provided', async () => {
+    const reporter = await revealReporter(
+      targetId,
+      'Investigating duplicate emergency dispatch'
+    );
+
+    expect(reporter).toBeDefined();
+    expect(reporter.id).toMatch(/^usr_/);
+    expect(reporter.display_name).toBeDefined();
+    expect(reporter.email).toContain('@');
+    expect(typeof reporter.trust_score).toBe('number');
+  });
+
+  it('requires a reason when revealing exact GPS coordinates', async () => {
+    await expect(revealExactLocation(targetId, '')).rejects.toThrow(
+      'Audit reason is required'
+    );
+  });
+
+  it('reveals exact coordinates when valid audit reason is provided', async () => {
+    const coords = await revealExactLocation(
+      targetId,
+      'Dispatching emergency medical services unit'
+    );
+
+    expect(coords).toBeDefined();
+    expect(typeof coords.lat).toBe('number');
+    expect(typeof coords.lng).toBe('number');
+    expect(coords.lat).toBeGreaterThan(0);
+  });
+
+  it('requires a reason to perform a moderation action', async () => {
+    await expect(
+      performIncidentAction(targetId, 'approve', '')
+    ).rejects.toThrow('Reason is required');
+  });
+
+  it('approves an incident successfully and returns updated status', async () => {
+    const updated = await performIncidentAction(
+      targetId,
+      'approve',
+      'Verified by rescue squad dispatch'
+    );
+
+    expect(updated.review_status).toBe('published');
+  });
+
+  it('rejects an incident successfully and returns updated status', async () => {
+    const updated = await performIncidentAction(
+      targetId,
+      'reject',
+      'Insufficient verifiable information'
+    );
+
+    expect(updated.review_status).toBe('not_approved');
   });
 });

@@ -1,5 +1,29 @@
 import { apiClient } from '@/lib/api/client';
-import type { IncidentFilterValues, IncidentListResponse } from '../types';
+import { env } from '@/lib/env';
+import type {
+  IncidentFilterValues,
+  IncidentListResponse,
+  IncidentDetail,
+  ReporterProfile,
+  IncidentActionType,
+} from '../types';
+
+function getEndpointUrl(endpoint: string) {
+  if (typeof window === 'undefined' || process.env.NODE_ENV === 'test') {
+    return `${env.API_BASE_URL}${endpoint}`;
+  }
+  return `/api/proxy${endpoint}`;
+}
+
+function getRequestHeaders() {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (process.env.NODE_ENV === 'test') {
+    headers['Authorization'] = 'Bearer mock_jwt_access_admin_token';
+  }
+  return headers;
+}
 
 export interface FetchIncidentsParams extends IncidentFilterValues {
   limit?: number;
@@ -97,3 +121,84 @@ export async function fetchIncidents(
     }
   );
 }
+
+export async function fetchIncidentDetail(id: string): Promise<IncidentDetail> {
+  const res = await fetch(getEndpointUrl(`/admin/incidents/${encodeURIComponent(id)}`), {
+    headers: getRequestHeaders(),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => null);
+    throw new Error(errorData?.error?.message || `Failed to fetch incident ${id}`);
+  }
+
+  return res.json();
+}
+
+export async function revealReporter(
+  id: string,
+  reason: string
+): Promise<ReporterProfile> {
+  const res = await fetch(
+    getEndpointUrl(`/admin/incidents/${encodeURIComponent(id)}/reveal-reporter`),
+    {
+      method: 'POST',
+      headers: getRequestHeaders(),
+      body: JSON.stringify({ reason }),
+    }
+  );
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => null);
+    throw new Error(errorData?.error?.message || 'Failed to reveal reporter identity');
+  }
+
+  const data = await res.json();
+  return data.reporter || data;
+}
+
+export async function revealExactLocation(
+  id: string,
+  reason: string
+): Promise<{ lat: number; lng: number }> {
+  const res = await fetch(
+    getEndpointUrl(`/admin/incidents/${encodeURIComponent(id)}/reveal-location`),
+    {
+      method: 'POST',
+      headers: getRequestHeaders(),
+      body: JSON.stringify({ reason }),
+    }
+  );
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => null);
+    throw new Error(errorData?.error?.message || 'Failed to reveal exact location');
+  }
+
+  const data = await res.json();
+  return data.exact_location || data;
+}
+
+export async function performIncidentAction(
+  id: string,
+  action: IncidentActionType,
+  reason: string,
+  notes?: string
+): Promise<IncidentDetail> {
+  const res = await fetch(
+    getEndpointUrl(`/admin/incidents/${encodeURIComponent(id)}/${action}`),
+    {
+      method: 'POST',
+      headers: getRequestHeaders(),
+      body: JSON.stringify({ reason, notes }),
+    }
+  );
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => null);
+    throw new Error(errorData?.error?.message || `Failed to perform action "${action}"`);
+  }
+
+  return res.json();
+}
+

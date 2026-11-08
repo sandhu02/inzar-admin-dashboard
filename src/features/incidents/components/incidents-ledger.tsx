@@ -18,6 +18,7 @@ import { IncidentSavedViews } from './incident-saved-views';
 import { IncidentColumnVisibility } from './incident-column-visibility';
 import { IncidentBulkActions } from './incident-bulk-actions';
 import { IncidentCardList } from './incident-card-list';
+import { IncidentDetailDrawer } from './detail/incident-detail-drawer';
 import type { Incident, SavedView } from '../types';
 
 function IncidentSearchBox({
@@ -77,6 +78,9 @@ export function IncidentsLedger() {
   // Table row selection state
   const [rowSelection, setRowSelection] = React.useState<RowSelectionState>({});
 
+  // Active drawer incident ID
+  const [selectedIncidentId, setSelectedIncidentId] = React.useState<string | null>(null);
+
   // Query server state
   const {
     data,
@@ -110,7 +114,11 @@ export function IncidentsLedger() {
   };
 
   const handleRowAction = (action: string, incident: Incident) => {
-    console.info(`Action ${action} on incident ${incident.id}`);
+    if (action === 'view') {
+      setSelectedIncidentId(incident.id);
+    } else {
+      console.info(`Action ${action} on incident ${incident.id}`);
+    }
   };
 
   const columns = React.useMemo(
@@ -258,6 +266,7 @@ export function IncidentsLedger() {
           onRowSelectionChange={setRowSelection}
           columnVisibility={columnVisibility}
           onColumnVisibilityChange={setColumnVisibility}
+          onRowClick={(row) => setSelectedIncidentId(row.id)}
         />
       </div>
 
@@ -281,6 +290,7 @@ export function IncidentsLedger() {
             }
           }}
           onRowAction={handleRowAction}
+          onRowClick={(incident) => setSelectedIncidentId(incident.id)}
         />
       </div>
 
@@ -314,6 +324,13 @@ export function IncidentsLedger() {
           </Button>
         </div>
       </div>
+
+      {/* Incident Detail Side Drawer */}
+      <IncidentDetailDrawer
+        incidentId={selectedIncidentId}
+        open={!!selectedIncidentId}
+        onOpenChange={(open) => !open && setSelectedIncidentId(null)}
+      />
     </div>
   );
 }
