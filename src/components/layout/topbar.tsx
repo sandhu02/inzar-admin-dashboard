@@ -19,9 +19,16 @@ interface TopbarProps {
   user: SessionUser;
 }
 
+const emptySubscribe = () => () => {};
+
 export function Topbar({ user }: TopbarProps) {
   const pathname = usePathname();
   const { theme, setTheme } = useTheme();
+  const mounted = React.useSyncExternalStore(
+    emptySubscribe,
+    () => true,
+    () => false
+  );
 
   // Generate breadcrumb title
   const getBreadcrumb = () => {
@@ -82,11 +89,16 @@ export function Topbar({ user }: TopbarProps) {
           onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
           className="h-9 w-9 rounded-lg border-border bg-surface-elevated hover:bg-surface text-muted-foreground hover:text-foreground"
           aria-label="Toggle color theme"
+          suppressHydrationWarning
         >
-          {theme === 'dark' ? (
-            <Sun className="h-4 w-4 transition-transform" />
+          {mounted ? (
+            theme === 'dark' ? (
+              <Sun className="h-4 w-4 transition-transform" />
+            ) : (
+              <Moon className="h-4 w-4 transition-transform" />
+            )
           ) : (
-            <Moon className="h-4 w-4 transition-transform" />
+            <span className="h-4 w-4" />
           )}
         </Button>
       </div>

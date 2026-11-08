@@ -35,6 +35,7 @@ export function DataTable<TData, TValue>({
   onRowSelectionChange,
   className,
 }: DataTableProps<TData, TValue>) {
+  'use no memo';
   const table = useReactTable({
     data,
     columns,

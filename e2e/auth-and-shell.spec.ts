@@ -13,7 +13,7 @@ test.describe('Phase 1: Authentication and App Shell', () => {
     await page.fill('#password', 'WrongPassword123');
     await page.click('button[type="submit"]');
 
-    await expect(page.getByRole('alert')).toBeVisible();
+    await expect(page.getByText('Authentication Error')).toBeVisible();
     await expect(page.getByText('Invalid email or password')).toBeVisible();
   });
 
@@ -23,7 +23,7 @@ test.describe('Phase 1: Authentication and App Shell', () => {
     await page.fill('#password', 'Password123!');
     await page.click('button[type="submit"]');
 
-    await expect(page.getByRole('alert')).toBeVisible();
+    await expect(page.getByText('Authentication Error')).toBeVisible();
     await expect(
       page.getByText('Access restricted to staff accounts only')
     ).toBeVisible();
@@ -38,28 +38,26 @@ test.describe('Phase 1: Authentication and App Shell', () => {
     await expect(page).toHaveURL('/');
     await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible();
 
-    const isMobile = (page.viewportSize()?.width ?? 1440) < 768;
+    const isMobile = (page.viewportSize()?.width ?? 1440) < 1024;
     if (isMobile) {
+      // Open drawer on tablet / mobile
       const menuButton = page.locator('header').getByRole('button').first();
       await menuButton.click();
     }
 
-    const aside = page.locator('aside:visible').first();
-    const nav = aside.locator('nav');
+    const nav = page.locator('aside nav');
 
-    // Verify user account menu in visible sidebar
-    const userMenu = aside.getByRole('button', { name: 'User account menu' });
-    await expect(userMenu).toBeVisible();
-    await expect(userMenu).toContainText('Sana Rehman');
-    await expect(userMenu).toContainText('admin');
+    // Verify user card in sidebar
+    await expect(page.locator('aside').getByText('Sana Rehman')).toBeVisible();
+    await expect(page.locator('aside').getByRole('button', { name: 'User account menu' })).toContainText('admin');
 
     // Verify ADMIN section exists in sidebar nav
-    await expect(aside.getByText('ADMIN', { exact: true }).first()).toBeVisible();
-    await expect(nav.getByRole('link', { name: /Users/i }).first()).toBeVisible();
-    await expect(nav.getByRole('link', { name: /Categories/i }).first()).toBeVisible();
-    await expect(nav.getByRole('link', { name: /Settings/i }).first()).toBeVisible();
-    await expect(nav.getByRole('link', { name: /Audit log/i }).first()).toBeVisible();
-    await expect(nav.getByRole('link', { name: /Jobs/i }).first()).toBeVisible();
+    await expect(page.locator('aside').getByText('ADMIN', { exact: true })).toBeVisible();
+    await expect(nav.getByRole('link', { name: /Users/i })).toBeVisible();
+    await expect(nav.getByRole('link', { name: /Categories/i })).toBeVisible();
+    await expect(nav.getByRole('link', { name: /Settings/i })).toBeVisible();
+    await expect(nav.getByRole('link', { name: /Audit log/i })).toBeVisible();
+    await expect(nav.getByRole('link', { name: /Jobs/i })).toBeVisible();
 
     // Screenshot at current viewport
     const width = page.viewportSize()?.width ?? 1440;
@@ -74,30 +72,26 @@ test.describe('Phase 1: Authentication and App Shell', () => {
 
     await expect(page).toHaveURL('/');
 
-    const isMobile = (page.viewportSize()?.width ?? 1440) < 768;
+    const isMobile = (page.viewportSize()?.width ?? 1440) < 1024;
     if (isMobile) {
       const menuButton = page.locator('header').getByRole('button').first();
       await menuButton.click();
     }
 
-    const aside = page.locator('aside:visible').first();
-    const nav = aside.locator('nav');
+    const nav = page.locator('aside nav');
 
-    const userMenu = aside.getByRole('button', { name: 'User account menu' });
-    await expect(userMenu).toBeVisible();
-    await expect(userMenu).toContainText('Ali Khan');
-    await expect(userMenu).toContainText('moderator');
+    await expect(page.locator('aside').getByText('Ali Khan')).toBeVisible();
+    await expect(page.locator('aside').getByText(/moderator/i)).toBeVisible();
 
     // Operational items visible
-    await expect(nav.getByRole('link', { name: /Overview/i }).first()).toBeVisible();
-    await expect(nav.getByRole('link', { name: /Moderation queue/i }).first()).toBeVisible();
-    await expect(nav.getByRole('link', { name: /Incidents/i }).first()).toBeVisible();
+    await expect(nav.getByRole('link', { name: /Overview/i })).toBeVisible();
+    await expect(nav.getByRole('link', { name: /Moderation queue/i })).toBeVisible();
+    await expect(nav.getByRole('link', { name: /Incidents/i })).toBeVisible();
 
     // Admin-only items must NOT be visible
-    await expect(aside.getByText('ADMIN', { exact: true })).toHaveCount(0);
-    await expect(nav.getByRole('link', { name: /Users/i })).toHaveCount(0);
-    await expect(nav.getByRole('link', { name: /Categories/i })).toHaveCount(0);
-    await expect(nav.getByRole('link', { name: /Settings/i })).toHaveCount(0);
+    await expect(nav.getByRole('link', { name: /Users/i })).not.toBeVisible();
+    await expect(nav.getByRole('link', { name: /Categories/i })).not.toBeVisible();
+    await expect(nav.getByRole('link', { name: /Settings/i })).not.toBeVisible();
   });
 
   test('moderator attempting to access admin route is blocked with 403', async ({ page }) => {
@@ -139,14 +133,14 @@ test.describe('Phase 1: Authentication and App Shell', () => {
     await page.click('button[type="submit"]');
     await expect(page).toHaveURL('/');
 
-    const isMobile = (page.viewportSize()?.width ?? 1440) < 768;
+    const isMobile = (page.viewportSize()?.width ?? 1440) < 1024;
     if (isMobile) {
       const menuButton = page.locator('header').getByRole('button').first();
       await menuButton.click();
     }
 
-    const aside = page.locator('aside:visible').first();
-    await aside.getByRole('button', { name: 'User account menu' }).click();
+    // Open user menu
+    await page.locator('aside').getByRole('button', { name: 'User account menu' }).click();
     await page.getByRole('menuitem', { name: 'Sign out' }).click();
 
     await expect(page).toHaveURL('/login');

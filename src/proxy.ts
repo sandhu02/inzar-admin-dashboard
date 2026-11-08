@@ -3,7 +3,7 @@ import type { NextRequest } from 'next/server';
 import { unsealSession, SESSION_COOKIE_NAME } from '@/lib/auth/session';
 import { canAccessPath, isStaff } from '@/lib/permissions';
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Read session cookie
