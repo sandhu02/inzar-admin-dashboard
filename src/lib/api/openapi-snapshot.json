@@ -1,0 +1,307 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Inzar Backend API",
+    "version": "1.0.0",
+    "description": "FastAPI backend for Inzar mobile and admin dashboard"
+  },
+  "paths": {
+    "/auth/login": {
+      "post": {
+        "operationId": "auth_login",
+        "summary": "Login",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": { "type": "string", "format": "email" },
+                  "password": { "type": "string" }
+                },
+                "required": ["email", "password"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful login",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "access_token": { "type": "string" },
+                    "refresh_token": { "type": "string" },
+                    "token_type": { "type": "string", "default": "bearer" },
+                    "expires_in": { "type": "integer", "default": 900 },
+                    "user": {
+                      "$ref": "#/components/schemas/User"
+                    }
+                  },
+                  "required": ["access_token", "refresh_token", "user"]
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/ErrorResponse" },
+          "403": { "$ref": "#/components/responses/ErrorResponse" }
+        }
+      }
+    },
+    "/auth/refresh": {
+      "post": {
+        "operationId": "auth_refresh",
+        "summary": "Refresh Access Token",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "refresh_token": { "type": "string" }
+                },
+                "required": ["refresh_token"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Token refreshed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "access_token": { "type": "string" },
+                    "refresh_token": { "type": "string" },
+                    "expires_in": { "type": "integer" }
+                  },
+                  "required": ["access_token", "refresh_token"]
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/ErrorResponse" }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "operationId": "auth_logout",
+        "summary": "Logout",
+        "responses": {
+          "200": {
+            "description": "Logged out successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me": {
+      "get": {
+        "operationId": "get_me",
+        "summary": "Get Current User Profile",
+        "responses": {
+          "200": {
+            "description": "Current user",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/User" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/ErrorResponse" }
+        }
+      }
+    },
+    "/admin/incidents": {
+      "get": {
+        "operationId": "get_admin_incidents",
+        "summary": "List incidents",
+        "parameters": [
+          { "name": "cursor", "in": "query", "schema": { "type": "string" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 25 } },
+          { "name": "q", "in": "query", "schema": { "type": "string" } },
+          { "name": "review_status", "in": "query", "schema": { "type": "string" } },
+          { "name": "lifecycle_status", "in": "query", "schema": { "type": "string" } },
+          { "name": "category_id", "in": "query", "schema": { "type": "string" } },
+          { "name": "flagged", "in": "query", "schema": { "type": "boolean" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of incidents",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Incident" }
+                    },
+                    "next_cursor": { "type": "string", "nullable": true },
+                    "total_count": { "type": "integer" }
+                  },
+                  "required": ["items", "total_count"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/categories": {
+      "get": {
+        "operationId": "get_admin_categories",
+        "summary": "Get categories",
+        "responses": {
+          "200": {
+            "description": "Category list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Category" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/stats/overview": {
+      "get": {
+        "operationId": "get_admin_stats_overview",
+        "summary": "Overview stats",
+        "parameters": [
+          { "name": "period", "in": "query", "schema": { "type": "string", "enum": ["24h", "7d", "30d"], "default": "7d" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Stats summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "queue_size": { "type": "integer" },
+                    "oldest_queue_item_age_minutes": { "type": "integer" },
+                    "new_incidents_count": { "type": "integer" },
+                    "flags_awaiting_action": { "type": "integer" },
+                    "flags_distinct_incidents": { "type": "integer" },
+                    "job_failures_count": { "type": "integer" },
+                    "job_backlog_count": { "type": "integer" },
+                    "active_users_count": { "type": "integer" },
+                    "alerts_sent_count": { "type": "integer" }
+                  },
+                  "required": ["queue_size", "new_incidents_count", "flags_awaiting_action", "job_failures_count"]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "email": { "type": "string" },
+          "display_name": { "type": "string" },
+          "role": { "type": "string", "enum": ["admin", "moderator", "user"] },
+          "is_suspended": { "type": "boolean", "default": false },
+          "is_verified": { "type": "boolean", "default": false },
+          "created_at": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "email", "display_name", "role"]
+      },
+      "Category": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "slug": { "type": "string" },
+          "name": { "type": "string" },
+          "color_hex": { "type": "string" },
+          "icon_key": { "type": "string" },
+          "is_active": { "type": "boolean" },
+          "sort_order": { "type": "integer" },
+          "urgency": { "type": "string", "enum": ["routine", "high"] }
+        },
+        "required": ["id", "slug", "name", "color_hex", "is_active", "sort_order"]
+      },
+      "Incident": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "category": { "$ref": "#/components/schemas/Category" },
+          "review_status": {
+            "type": "string",
+            "enum": ["ai_reviewed", "under_review", "needs_review", "published", "not_approved", "removed", "false_report"]
+          },
+          "lifecycle_status": {
+            "type": "string",
+            "enum": ["active", "resolved", "expired", "hidden"]
+          },
+          "flags_count": { "type": "integer" },
+          "place_label": { "type": "string" },
+          "fuzzed_location": {
+            "type": "object",
+            "properties": {
+              "lat": { "type": "number" },
+              "lng": { "type": "number" }
+            },
+            "required": ["lat", "lng"]
+          },
+          "reported_at": { "type": "string", "format": "date-time" },
+          "has_media": { "type": "boolean" },
+          "thumbnail_url": { "type": "string", "nullable": true }
+        },
+        "required": ["id", "title", "category", "review_status", "lifecycle_status", "reported_at"]
+      },
+      "ErrorDetail": {
+        "type": "object",
+        "properties": {
+          "code": { "type": "string" },
+          "message": { "type": "string" },
+          "details": { "type": "object", "nullable": true }
+        },
+        "required": ["code", "message"]
+      }
+    },
+    "responses": {
+      "ErrorResponse": {
+        "description": "Standard error response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "error": { "$ref": "#/components/schemas/ErrorDetail" }
+              },
+              "required": ["error"]
+            }
+          }
+        }
+      }
+    }
+  }
+}
