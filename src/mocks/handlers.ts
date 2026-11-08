@@ -95,7 +95,7 @@ export const mockCategories = [
 
 export const handlers = [
   // Auth login
-  http.post('*/auth/login', async ({ request }) => {
+  http.post(/.*\/auth\/login$/, async ({ request }) => {
     const body = (await request.json()) as { email?: string; password?: string };
 
     if (body.password !== 'Password123!') {
@@ -152,7 +152,7 @@ export const handlers = [
   }),
 
   // Auth refresh
-  http.post('*/auth/refresh', async ({ request }) => {
+  http.post(/.*\/auth\/refresh$/, async ({ request }) => {
     const body = (await request.json()) as { refresh_token?: string };
     if (!body.refresh_token || body.refresh_token.includes('invalid')) {
       return HttpResponse.json(
@@ -174,12 +174,12 @@ export const handlers = [
   }),
 
   // Auth logout
-  http.post('*/auth/logout', () => {
+  http.post(/.*\/auth\/logout$/, () => {
     return HttpResponse.json({ success: true });
   }),
 
   // Get current user profile
-  http.get('*/me', ({ request }) => {
+  http.get(/.*\/me$/, ({ request }) => {
     const authHeader = request.headers.get('Authorization');
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return HttpResponse.json(
@@ -200,12 +200,12 @@ export const handlers = [
   }),
 
   // Categories list
-  http.get('*/admin/categories', () => {
+  http.get(/.*\/admin\/categories$/, () => {
     return HttpResponse.json(mockCategories);
   }),
 
   // Overview stats
-  http.get('*/admin/stats/overview', () => {
+  http.get(/.*\/admin\/stats\/overview$/, () => {
     return HttpResponse.json({
       queue_size: 14,
       oldest_queue_item_age_minutes: 38,
