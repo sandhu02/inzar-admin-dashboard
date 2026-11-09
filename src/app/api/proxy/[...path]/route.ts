@@ -7,7 +7,6 @@ import {
   clearSessionCookie,
 } from '@/lib/auth/session';
 import { refreshSingleFlight } from '@/lib/auth/refresh';
-import { queryMockIncidents } from '@/mocks/handlers';
 import { enrichIncidentDetail } from '@/features/incidents/api/mock-detail';
 import type { Incident, IncidentDetail } from '@/features/incidents/types';
 
@@ -52,10 +51,10 @@ const SLUG_TO_BACKEND_UUID: Record<string, string> = {
 function adaptBackendIncidents(backendData: any, searchParams: URLSearchParams) {
   const rawList = Array.isArray(backendData)
     ? backendData
-    : Array.isArray(backendData?.data)
-      ? backendData.data
-      : Array.isArray(backendData?.items)
-        ? backendData.items
+    : Array.isArray(backendData?.items)
+      ? backendData.items
+      : Array.isArray(backendData?.data)
+        ? backendData.data
         : [];
 
   const offset = parseInt(searchParams.get('cursor') || '0', 10) || 0;
@@ -63,7 +62,7 @@ function adaptBackendIncidents(backendData: any, searchParams: URLSearchParams) 
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const items = rawList.map((item: any) => {
-    const catSlug = item.category_slug || 'other';
+    const catSlug = item.category?.slug || item.category_slug || 'other';
     const style = CATEGORY_STYLE_LOOKUP[catSlug] || {
       color_hex: '#6B7280',
       icon_key: 'help-circle',
@@ -72,132 +71,219 @@ function adaptBackendIncidents(backendData: any, searchParams: URLSearchParams) 
     const id = String(item.id);
     const cachedOverride = updatedIncidentsCache.get(id);
 
+    const category =
+      item.category && typeof item.category === 'object'
+        ? {
+            id: String(item.category.id || item.category_id || ''),
+            slug: item.category.slug || catSlug,
+            name: item.category.name || item.category_name || 'General',
+            color_hex: item.category.color_hex || item.color_hex || style.color_hex,
+            icon_key: item.category.icon_key || item.icon_key || style.icon_key,
+            is_active: item.category.is_active ?? true,
+            sort_order: item.category.sort_order ?? 0,
+          }
+        : {
+            id: String(item.category_id || ''),
+            slug: catSlug,
+            name: item.category_name || 'General',
+            color_hex: item.color_hex || style.color_hex,
+            icon_key: item.icon_key || style.icon_key,
+            is_active: true,
+            sort_order: 0,
+          };
+
+    const fuzzed_location =
+      item.fuzzed_location && typeof item.fuzzed_location === 'object'
+        ? item.fuzzed_location
+        : {
+            lat: typeof item.public_lat === 'number' ? item.public_lat : (item.lat ?? 0),
+            lng: typeof item.public_lon === 'number' ? item.public_lon : (item.lng ?? 0),
+          };
+
     return {
       id,
-      title: item.title,
+      title: item.title || '',
       description: item.description || '',
-      category: {
-        id: String(item.category_id || ''),
-        slug: catSlug,
-        name: item.category_name || 'General',
-        color_hex: item.color_hex || style.color_hex,
-        icon_key: item.icon_key || style.icon_key,
-        is_active: true,
-        sort_order: 0,
-      },
+      category,
       review_status: cachedOverride?.review_status || item.review_status,
       lifecycle_status: cachedOverride?.lifecycle_status || item.lifecycle_status,
       place_label: item.place_label || 'Reported Location',
-      fuzzed_location: {
-        lat: typeof item.public_lat === 'number' ? item.public_lat : 0,
-        lng: typeof item.public_lon === 'number' ? item.public_lon : 0,
-      },
-      reported_at: item.reported_at,
-      has_media: Array.isArray(item.media_urls) && item.media_urls.length > 0,
+      fuzzed_location,
+      reported_at: item.reported_at || new Date().toISOString(),
+      has_media:
+        typeof item.has_media === 'boolean'
+          ? item.has_media
+          : Array.isArray(item.media_urls) && item.media_urls.length > 0,
       thumbnail_url:
-        Array.isArray(item.media_urls) && item.media_urls.length > 0
+        item.thumbnail_url ??
+        (Array.isArray(item.media_urls) && item.media_urls.length > 0
           ? item.media_urls[0]
-          : null,
+          : null),
       flags_count: item.flags_count ?? 0,
     };
   });
 
   return {
     items,
-    next_cursor: items.length >= limit ? String(offset + limit) : null,
-    prev_cursor: offset > 0 ? String(Math.max(0, offset - limit)) : null,
-    total_count: items.length,
-  };
-}
-
-function createFallbackIncident(id: string): Incident {
-  return {
-    id,
-    title: 'Incident',
-    description: '',
-    category: {
-      id: 'cat_other',
-      slug: 'other',
-      name: 'General',
-      color_hex: '#6B7280',
-      icon_key: 'help-circle',
-      is_active: true,
-      sort_order: 99,
-    },
-    review_status: 'published',
-    lifecycle_status: 'active',
-    reported_at: new Date().toISOString(),
+    next_cursor:
+      backendData?.next_cursor ?? (items.length >= limit ? String(offset + limit) : null),
+    prev_cursor:
+      backendData?.prev_cursor ?? (offset > 0 ? String(Math.max(0, offset - limit)) : null),
+    total_count:
+      typeof backendData?.total_count === 'number' ? backendData.total_count : items.length,
   };
 }
 
 async function findIncidentById(id: string, accessToken: string): Promise<Incident | null> {
-  // 1. Check live backend incidents list
-  try {
-    const res = await fetch(`${env.API_BASE_URL}/admin/incidents`, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    if (res.ok) {
-      const json = await res.json();
-      const rawList = (Array.isArray(json) ? json : json?.data || []) as Record<string, unknown>[];
-      const match = rawList.find((it) => String(it.id) === id);
-      if (match) {
-        const catSlug = (match.category_slug as string) || 'other';
-        const style = CATEGORY_STYLE_LOOKUP[catSlug] || {
-          color_hex: '#6B7280',
-          icon_key: 'help-circle',
-        };
-        const override = updatedIncidentsCache.get(id);
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${accessToken}`,
+    Accept: 'application/json',
+    'X-Tunnel-Skip-AntiPhishing-Page': 'true',
+    'bypass-tunnel-reminder': 'true',
+  };
 
-        return {
-          id: String(match.id),
-          title: String(match.title || ''),
-          description: (match.description as string) || '',
-          category: {
-            id: String(match.category_id || ''),
-            slug: catSlug,
-            name: (match.category_name as string) || 'General',
-            color_hex: (match.color_hex as string) || style.color_hex,
-            icon_key: (match.icon_key as string) || style.icon_key,
-            is_active: true,
-            sort_order: 0,
-          },
-          review_status:
-            override?.review_status || (match.review_status as Incident['review_status']),
-          lifecycle_status:
-            override?.lifecycle_status || (match.lifecycle_status as Incident['lifecycle_status']),
-          place_label: (match.place_label as string) || 'Reported Location',
-          fuzzed_location: {
-            lat: typeof match.public_lat === 'number' ? match.public_lat : 0,
-            lng: typeof match.public_lon === 'number' ? match.public_lon : 0,
-          },
-          reported_at: String(match.reported_at || new Date().toISOString()),
-          has_media: Array.isArray(match.media_urls) && match.media_urls.length > 0,
-          thumbnail_url:
-            Array.isArray(match.media_urls) && match.media_urls[0]
-              ? String(match.media_urls[0])
-              : null,
-          flags_count: typeof match.flags_count === 'number' ? match.flags_count : 0,
-        };
+  // 1. Try direct GET /admin/incidents/:id from real backend
+  try {
+    const singleRes = await fetch(
+      `${env.API_BASE_URL}/admin/incidents/${encodeURIComponent(id)}`,
+      { headers }
+    );
+    if (singleRes.ok) {
+      const contentType = singleRes.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const item: any = await singleRes.json();
+        if (item && item.id) {
+          const catSlug = item.category?.slug || item.category_slug || 'other';
+          const style = CATEGORY_STYLE_LOOKUP[catSlug] || {
+            color_hex: '#6B7280',
+            icon_key: 'help-circle',
+          };
+          const override = updatedIncidentsCache.get(id);
+
+          return {
+            id: String(item.id),
+            title: String(item.title || ''),
+            description: (item.description as string) || '',
+            category:
+              item.category && typeof item.category === 'object'
+                ? item.category
+                : {
+                    id: String(item.category_id || ''),
+                    slug: catSlug,
+                    name: (item.category_name as string) || 'General',
+                    color_hex: (item.color_hex as string) || style.color_hex,
+                    icon_key: (item.icon_key as string) || style.icon_key,
+                    is_active: true,
+                    sort_order: 0,
+                  },
+            review_status:
+              override?.review_status || (item.review_status as Incident['review_status']),
+            lifecycle_status:
+              override?.lifecycle_status || (item.lifecycle_status as Incident['lifecycle_status']),
+            place_label: (item.place_label as string) || 'Reported Location',
+            fuzzed_location:
+              item.fuzzed_location && typeof item.fuzzed_location === 'object'
+                ? item.fuzzed_location
+                : {
+                    lat: typeof item.public_lat === 'number' ? item.public_lat : (item.lat ?? 0),
+                    lng: typeof item.public_lon === 'number' ? item.public_lon : (item.lng ?? 0),
+                  },
+            reported_at: String(item.reported_at || new Date().toISOString()),
+            has_media:
+              typeof item.has_media === 'boolean'
+                ? item.has_media
+                : Array.isArray(item.media_urls) && item.media_urls.length > 0,
+            thumbnail_url:
+              item.thumbnail_url ??
+              (Array.isArray(item.media_urls) && item.media_urls[0]
+                ? String(item.media_urls[0])
+                : null),
+            flags_count: typeof item.flags_count === 'number' ? item.flags_count : 0,
+          };
+        }
       }
     }
   } catch {
-    // backend unavailable, check mock dataset
+    // proceed to list query fallback
   }
 
-  // 2. Check mock dataset
-  const { mockIncidentsDataset } = await import('@/mocks/incidents-data');
-  const mockMatch = mockIncidentsDataset.find((it) => it.id === id);
-  if (mockMatch) {
-    const override = updatedIncidentsCache.get(id);
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { reporter_id, ...sanitized } = mockMatch;
-    return {
-      ...sanitized,
-      ...(override?.review_status ? { review_status: override.review_status } : {}),
-      ...(override?.lifecycle_status ? { lifecycle_status: override.lifecycle_status } : {}),
-    };
+  // 2. Query incidents list from real backend: GET /admin/incidents?q=:id
+  try {
+    const listRes = await fetch(
+      `${env.API_BASE_URL}/admin/incidents?q=${encodeURIComponent(id)}`,
+      { headers }
+    );
+    if (listRes.ok) {
+      const contentType = listRes.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        const json = await listRes.json();
+        const rawList = (
+          Array.isArray(json)
+            ? json
+            : Array.isArray(json?.items)
+              ? json.items
+              : Array.isArray(json?.data)
+                ? json.data
+                : []
+        ) as Record<string, unknown>[];
+
+        const match = rawList.find((it) => String(it.id) === id);
+        if (match) {
+          const catSlug =
+            (match.category_slug as string) ||
+            ((match.category as Record<string, unknown>)?.slug as string) ||
+            'other';
+          const style = CATEGORY_STYLE_LOOKUP[catSlug] || {
+            color_hex: '#6B7280',
+            icon_key: 'help-circle',
+          };
+          const override = updatedIncidentsCache.get(id);
+
+          return {
+            id: String(match.id),
+            title: String(match.title || ''),
+            description: (match.description as string) || '',
+            category:
+              (match.category as Incident['category']) || {
+                id: String(match.category_id || ''),
+                slug: catSlug,
+                name: (match.category_name as string) || 'General',
+                color_hex: (match.color_hex as string) || style.color_hex,
+                icon_key: (match.icon_key as string) || style.icon_key,
+                is_active: true,
+                sort_order: 0,
+              },
+            review_status:
+              override?.review_status || (match.review_status as Incident['review_status']),
+            lifecycle_status:
+              override?.lifecycle_status || (match.lifecycle_status as Incident['lifecycle_status']),
+            place_label: (match.place_label as string) || 'Reported Location',
+            fuzzed_location:
+              (match.fuzzed_location as Incident['fuzzed_location']) || {
+                lat: typeof match.public_lat === 'number' ? match.public_lat : ((match.lat as number) ?? 0),
+                lng: typeof match.public_lon === 'number' ? match.public_lon : ((match.lng as number) ?? 0),
+              },
+            reported_at: String(match.reported_at || new Date().toISOString()),
+            has_media:
+              typeof match.has_media === 'boolean'
+                ? match.has_media
+                : Array.isArray(match.media_urls) && match.media_urls.length > 0,
+            thumbnail_url:
+              (match.thumbnail_url as string | null) ??
+              (Array.isArray(match.media_urls) && match.media_urls[0]
+                ? String(match.media_urls[0])
+                : null),
+            flags_count: typeof match.flags_count === 'number' ? match.flags_count : 0,
+          };
+        }
+      }
+    }
+  } catch {
+    // live backend query failed
   }
 
+  // Real backend did not find the incident
   return null;
 }
 
@@ -305,7 +391,18 @@ async function handleProxy(req: NextRequest, { params }: RouteContext) {
     }
 
     const base = await findIncidentById(incidentId, session.accessToken);
-    const detail = enrichIncidentDetail(base || createFallbackIncident(incidentId));
+    if (!base) {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'NOT_FOUND',
+            message: `Incident ${incidentId} was not found.`,
+          },
+        },
+        { status: 404 }
+      );
+    }
+    const detail = enrichIncidentDetail(base);
 
     console.info(
       `[AUDIT] Reporter identity revealed for incident ${incidentId} by ${session.user.email} (${session.user.role}). Reason: "${reason}"`
@@ -339,7 +436,18 @@ async function handleProxy(req: NextRequest, { params }: RouteContext) {
     }
 
     const base = await findIncidentById(incidentId, session.accessToken);
-    const detail = enrichIncidentDetail(base || createFallbackIncident(incidentId));
+    if (!base) {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'NOT_FOUND',
+            message: `Incident ${incidentId} was not found.`,
+          },
+        },
+        { status: 404 }
+      );
+    }
+    const detail = enrichIncidentDetail(base);
 
     console.info(
       `[AUDIT] Exact GPS coordinates revealed for incident ${incidentId} by ${session.user.email} (${session.user.role}). Reason: "${reason}"`
@@ -408,7 +516,18 @@ async function handleProxy(req: NextRequest, { params }: RouteContext) {
     );
 
     const base = await findIncidentById(incidentId, session.accessToken);
-    const detail = enrichIncidentDetail(base || createFallbackIncident(incidentId));
+    if (!base) {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'NOT_FOUND',
+            message: `Incident ${incidentId} was not found.`,
+          },
+        },
+        { status: 404 }
+      );
+    }
+    const detail = enrichIncidentDetail(base);
 
     const statusUpdates: Partial<IncidentDetail> = {};
     if (action === 'approve') {
@@ -510,6 +629,9 @@ async function handleProxy(req: NextRequest, { params }: RouteContext) {
   // 5. Forward request to backend
   const forwardHeaders = new Headers();
   forwardHeaders.set('Authorization', `Bearer ${session.accessToken}`);
+  forwardHeaders.set('Accept', 'application/json');
+  forwardHeaders.set('X-Tunnel-Skip-AntiPhishing-Page', 'true');
+  forwardHeaders.set('bypass-tunnel-reminder', 'true');
 
   const contentType = req.headers.get('content-type');
   if (contentType) {
@@ -532,24 +654,16 @@ async function handleProxy(req: NextRequest, { params }: RouteContext) {
       body,
     });
   } catch (fetchErr) {
-    // Graceful fallback for documented gaps when backend is unreachable
-    if (pathString === 'admin/incidents' && method === 'GET') {
-      console.warn(
-        '[BFF Proxy] Backend fetch failed for GET /admin/incidents. Serving mock fallback.',
-        fetchErr
-      );
-      return NextResponse.json(queryMockIncidents(req.nextUrl.searchParams));
-    }
-    throw fetchErr;
-  }
-
-  // Fallback for documented backend contract gaps
-  // When FastAPI returns 404 for GET /api/v1/admin/incidents (documented in docs/backend-gaps.md)
-  if (pathString === 'admin/incidents' && method === 'GET' && backendRes.status === 404) {
-    console.warn(
-      '[BFF Proxy] Backend returned 404 for GET /api/v1/admin/incidents (known gap). Serving mock dataset fallback.'
+    console.error(`[BFF Proxy] Backend fetch failed for ${method} ${pathString}:`, fetchErr);
+    return NextResponse.json(
+      {
+        error: {
+          code: 'BACKEND_UNAVAILABLE',
+          message: 'Unable to reach backend service. Please verify your backend server is running.',
+        },
+      },
+      { status: 503 }
     );
-    return NextResponse.json(queryMockIncidents(req.nextUrl.searchParams));
   }
 
   // 6. If backend returns 401, attempt emergency single-flight refresh and retry once
@@ -570,10 +684,6 @@ async function handleProxy(req: NextRequest, { params }: RouteContext) {
         headers: forwardHeaders,
         body,
       });
-
-      if (pathString === 'admin/incidents' && method === 'GET' && backendRes.status === 404) {
-        return NextResponse.json(queryMockIncidents(req.nextUrl.searchParams));
-      }
     } catch {
       // Refresh failed, session invalid
       const response = NextResponse.json(
@@ -591,14 +701,66 @@ async function handleProxy(req: NextRequest, { params }: RouteContext) {
   }
 
   // 7. Return backend response (adapted if admin/incidents)
-  if (backendRes.ok && pathString === 'admin/incidents' && method === 'GET') {
-    const json = await backendRes.json();
-    const adapted = adaptBackendIncidents(json, req.nextUrl.searchParams);
-    const response = NextResponse.json(adapted);
-    if (updatedSessionToken) {
-      setSessionCookie(response, updatedSessionToken);
+  if (pathString === 'admin/incidents' && method === 'GET') {
+    if (!backendRes.ok) {
+      const responseData = await backendRes.arrayBuffer();
+      const response = new NextResponse(responseData, {
+        status: backendRes.status,
+        statusText: backendRes.statusText,
+      });
+      const resContentType = backendRes.headers.get('content-type');
+      if (resContentType) {
+        response.headers.set('content-type', resContentType);
+      }
+      return response;
     }
-    return response;
+
+    const resContentType = backendRes.headers.get('content-type') || '';
+    if (!resContentType.includes('application/json')) {
+      const rawText = await backendRes.text();
+      const isRedirect =
+        backendRes.redirected ||
+        rawText.includes('devtunnels.ms') ||
+        rawText.includes('visualstudio.com') ||
+        rawText.includes('github.com/login');
+
+      console.error(
+        `[BFF Proxy] Expected JSON from backend at ${targetUrl}, but received Content-Type "${resContentType}". Redirected: ${backendRes.redirected} (${backendRes.url}). Preview: ${rawText.slice(0, 200)}`
+      );
+
+      return NextResponse.json(
+        {
+          error: {
+            code: 'INVALID_BACKEND_RESPONSE',
+            message: isRedirect
+              ? 'Backend API redirected to an authentication/login page. If using VS Code Dev Tunnels, make sure Port 8000 is set to Public, or point API_BASE_URL to http://127.0.0.1:8000/api/v1 in .env.local.'
+              : `Backend returned unexpected non-JSON response (${resContentType || 'HTML'}). Check backend API logs.`,
+          },
+        },
+        { status: 502 }
+      );
+    }
+
+    try {
+      const json = await backendRes.json();
+      const adapted = adaptBackendIncidents(json, req.nextUrl.searchParams);
+      const response = NextResponse.json(adapted);
+      if (updatedSessionToken) {
+        setSessionCookie(response, updatedSessionToken);
+      }
+      return response;
+    } catch (parseErr) {
+      console.error('[BFF Proxy] Failed to parse backend JSON response:', parseErr);
+      return NextResponse.json(
+        {
+          error: {
+            code: 'JSON_PARSE_ERROR',
+            message: 'Failed to parse backend response as JSON.',
+          },
+        },
+        { status: 502 }
+      );
+    }
   }
 
   const responseData = await backendRes.arrayBuffer();

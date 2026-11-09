@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { X } from 'lucide-react';
 import type { IncidentFilterValues } from '../types';
-import { mockCategories } from '@/mocks/fixtures';
+import { DEFAULT_CATEGORIES } from '../constants/categories';
 
 interface FilterChipsProps {
   filters: IncidentFilterValues;
@@ -51,7 +51,7 @@ export function IncidentFilterChips({
   // Category chip
   if (filters.category_id && filters.category_id.length > 0) {
     const names = filters.category_id.map((catIdOrSlug) => {
-      const match = mockCategories.find(
+      const match = DEFAULT_CATEGORIES.find(
         (c) => c.id === catIdOrSlug || c.slug === catIdOrSlug
       );
       return match ? match.name : catIdOrSlug;

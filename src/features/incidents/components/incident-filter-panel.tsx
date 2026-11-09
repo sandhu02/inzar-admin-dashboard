@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { CategoryChip } from '@/components/status/category-chip';
-import { mockCategories } from '@/mocks/fixtures';
+import { DEFAULT_CATEGORIES } from '../constants/categories';
 import { IncidentLocationFilter } from './incident-location-filter';
 import type { IncidentFilterValues } from '../types';
 
@@ -195,7 +195,7 @@ function FilterFormContent({
             Categories
           </label>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            {mockCategories.map((cat) => {
+            {DEFAULT_CATEGORIES.map((cat) => {
               const checked =
                 categoryId.includes(cat.id) || categoryId.includes(cat.slug);
               return (

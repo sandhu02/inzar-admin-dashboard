@@ -9,7 +9,7 @@ const envSchema = z.object({
     .default('inzar-admin-dev-secret-super-secure-32chars!'),
   NEXT_PUBLIC_USE_MOCKS: z
     .enum(['true', 'false'])
-    .default('true')
+    .default('false')
     .transform((val) => val === 'true'),
   NEXT_PUBLIC_MAP_STYLE_URL: z
     .string()
