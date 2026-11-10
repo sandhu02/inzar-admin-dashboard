@@ -6,6 +6,8 @@ import type {
   IncidentDetail,
   ReporterProfile,
   IncidentActionType,
+  BulkActionType,
+  BulkActionResponse,
 } from '../types';
 
 function getEndpointUrl(endpoint: string) {
@@ -201,4 +203,24 @@ export async function performIncidentAction(
 
   return res.json();
 }
+
+export async function performBulkIncidentAction(
+  ids: string[],
+  action: BulkActionType,
+  reason: string
+): Promise<BulkActionResponse> {
+  const res = await fetch(getEndpointUrl('/admin/incidents/bulk'), {
+    method: 'POST',
+    headers: getRequestHeaders(),
+    body: JSON.stringify({ ids, action, reason }),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => null);
+    throw new Error(errorData?.error?.message || `Failed to perform bulk ${action}`);
+  }
+
+  return res.json();
+}
+
 

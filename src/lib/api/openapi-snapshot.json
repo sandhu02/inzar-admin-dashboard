@@ -173,6 +173,350 @@
         }
       }
     },
+    "/admin/incidents/bulk": {
+      "post": {
+        "operationId": "bulk_moderate_incidents",
+        "summary": "Bulk moderate incidents",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/BulkActionRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Bulk moderation result with partial success reporting",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/BulkActionResponse" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ErrorResponse" },
+          "401": { "$ref": "#/components/responses/ErrorResponse" },
+          "403": { "$ref": "#/components/responses/ErrorResponse" }
+        }
+      }
+    },
+    "/admin/incidents/{id}": {
+      "get": {
+        "operationId": "get_admin_incident_detail",
+        "summary": "Get incident detail by ID",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Detailed incident record",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Incident" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/ErrorResponse" },
+          "404": { "$ref": "#/components/responses/ErrorResponse" }
+        }
+      }
+    },
+    "/admin/incidents/{id}/reveal-reporter": {
+      "post": {
+        "operationId": "reveal_incident_reporter",
+        "summary": "Audited reveal of reporter profile",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RevealRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Reporter profile unlocked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "reporter": { "$ref": "#/components/schemas/ReporterProfile" }
+                  },
+                  "required": ["reporter"]
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ErrorResponse" },
+          "401": { "$ref": "#/components/responses/ErrorResponse" },
+          "404": { "$ref": "#/components/responses/ErrorResponse" }
+        }
+      }
+    },
+    "/admin/incidents/{id}/reveal-location": {
+      "post": {
+        "operationId": "reveal_incident_location",
+        "summary": "Audited reveal of exact GPS coordinates",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/RevealRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Exact GPS location unlocked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "exact_location": {
+                      "type": "object",
+                      "properties": {
+                        "lat": { "type": "number" },
+                        "lng": { "type": "number" }
+                      },
+                      "required": ["lat", "lng"]
+                    }
+                  },
+                  "required": ["exact_location"]
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ErrorResponse" },
+          "401": { "$ref": "#/components/responses/ErrorResponse" },
+          "404": { "$ref": "#/components/responses/ErrorResponse" }
+        }
+      }
+    },
+    "/admin/incidents/{id}/approve": {
+      "post": {
+        "operationId": "approve_incident",
+        "summary": "Approve and publish incident",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ActionRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Incident approved",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Incident" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ErrorResponse" },
+          "401": { "$ref": "#/components/responses/ErrorResponse" },
+          "403": { "$ref": "#/components/responses/ErrorResponse" },
+          "409": { "$ref": "#/components/responses/ErrorResponse" }
+        }
+      }
+    },
+    "/admin/incidents/{id}/reject": {
+      "post": {
+        "operationId": "reject_incident",
+        "summary": "Reject incident report",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ActionRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Incident rejected",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Incident" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ErrorResponse" },
+          "401": { "$ref": "#/components/responses/ErrorResponse" },
+          "403": { "$ref": "#/components/responses/ErrorResponse" },
+          "409": { "$ref": "#/components/responses/ErrorResponse" }
+        }
+      }
+    },
+    "/admin/incidents/{id}/mark-false": {
+      "post": {
+        "operationId": "mark_incident_false",
+        "summary": "Mark incident as false report",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ActionRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Incident marked as false report",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Incident" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ErrorResponse" },
+          "401": { "$ref": "#/components/responses/ErrorResponse" },
+          "403": { "$ref": "#/components/responses/ErrorResponse" },
+          "409": { "$ref": "#/components/responses/ErrorResponse" }
+        }
+      }
+    },
+    "/admin/incidents/{id}/remove": {
+      "post": {
+        "operationId": "remove_incident",
+        "summary": "Soft remove incident",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ActionRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Incident soft removed",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Incident" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ErrorResponse" },
+          "401": { "$ref": "#/components/responses/ErrorResponse" },
+          "403": { "$ref": "#/components/responses/ErrorResponse" },
+          "409": { "$ref": "#/components/responses/ErrorResponse" }
+        }
+      }
+    },
+    "/admin/incidents/{id}/restore": {
+      "post": {
+        "operationId": "restore_incident",
+        "summary": "Restore soft removed incident",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ActionRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Incident restored",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Incident" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ErrorResponse" },
+          "401": { "$ref": "#/components/responses/ErrorResponse" },
+          "403": { "$ref": "#/components/responses/ErrorResponse" },
+          "409": { "$ref": "#/components/responses/ErrorResponse" }
+        }
+      }
+    },
+    "/admin/incidents/{id}/resolve": {
+      "post": {
+        "operationId": "resolve_incident",
+        "summary": "Mark incident as resolved",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ActionRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Incident marked resolved",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Incident" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ErrorResponse" },
+          "401": { "$ref": "#/components/responses/ErrorResponse" },
+          "403": { "$ref": "#/components/responses/ErrorResponse" },
+          "409": { "$ref": "#/components/responses/ErrorResponse" }
+        }
+      }
+    },
+    "/admin/incidents/{id}/rereview": {
+      "post": {
+        "operationId": "rereview_incident",
+        "summary": "Re-run review on incident",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ActionRequest" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Incident sent for re-review",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Incident" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/ErrorResponse" },
+          "401": { "$ref": "#/components/responses/ErrorResponse" },
+          "403": { "$ref": "#/components/responses/ErrorResponse" },
+          "409": { "$ref": "#/components/responses/ErrorResponse" }
+        }
+      }
+    },
     "/admin/categories": {
       "get": {
         "operationId": "get_admin_categories",
@@ -294,6 +638,71 @@
           "details": { "type": "object", "nullable": true }
         },
         "required": ["code", "message"]
+      },
+      "BulkActionRequest": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "action": {
+            "type": "string",
+            "enum": ["approve", "reject", "mark_false", "remove"]
+          },
+          "reason": { "type": "string" }
+        },
+        "required": ["ids", "action", "reason"]
+      },
+      "BulkActionFailure": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "error": { "$ref": "#/components/schemas/ErrorDetail" }
+        },
+        "required": ["id", "error"]
+      },
+      "BulkActionResponse": {
+        "type": "object",
+        "properties": {
+          "succeeded": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "failed": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/BulkActionFailure" }
+          }
+        },
+        "required": ["succeeded", "failed"]
+      },
+      "ReporterProfile": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "display_name": { "type": "string" },
+          "email": { "type": "string" },
+          "trust_score": { "type": "integer" },
+          "account_created_at": { "type": "string", "format": "date-time" },
+          "incidents_count": { "type": "integer" },
+          "flags_received_count": { "type": "integer" }
+        },
+        "required": ["id", "display_name", "email"]
+      },
+      "ActionRequest": {
+        "type": "object",
+        "properties": {
+          "reason": { "type": "string" },
+          "notes": { "type": "string" }
+        },
+        "required": ["reason"]
+      },
+      "RevealRequest": {
+        "type": "object",
+        "properties": {
+          "reason": { "type": "string" }
+        },
+        "required": ["reason"]
       }
     },
     "responses": {

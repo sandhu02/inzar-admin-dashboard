@@ -103,4 +103,105 @@ describe('IncidentDetailView component', () => {
     });
     expect(screen.getByText(/Primary Justification/i)).toBeInTheDocument();
   });
+
+  it('enforces state-aware enabling of actions for under_review incident', async () => {
+    renderIncidentDetailView('inc_001');
+
+    await waitFor(() => {
+      expect(screen.getByText('Brush fire near Trail 4')).toBeInTheDocument();
+    });
+
+    // Valid actions for under_review should be enabled
+    expect(screen.getByRole('button', { name: /Approve Incident/i })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: /Reject Incident/i })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: /Mark Incident as False Report/i })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: /Remove Incident/i })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: /Mark Incident as Resolved/i })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: /Re-run AI Review/i })).not.toBeDisabled();
+
+    // Invalid action for under_review: Restore must be disabled
+    expect(screen.getByRole('button', { name: /Restore Incident/i })).toBeDisabled();
+  });
+
+  it('reveals reporter identity with audit reason and does not persist to localStorage', async () => {
+    renderIncidentDetailView('inc_001');
+
+    await waitFor(() => {
+      expect(screen.getByText('PRIVACY PROTECTED')).toBeInTheDocument();
+    });
+
+    // Open reveal dialog
+    fireEvent.click(screen.getByRole('button', { name: /Reveal Identity/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /Reveal Reporter Identity/i })).toBeInTheDocument();
+    });
+
+    // Enter audit notes
+    const reasonInput = screen.getByPlaceholderText(/Add emergency dispatch ticket/i);
+    fireEvent.change(reasonInput, { target: { value: 'Investigating coordinated false alarms' } });
+
+    // Submit reveal
+    const confirmBtn = screen.getByRole('button', { name: /Reveal Reporter & Audit/i });
+    expect(confirmBtn).not.toBeDisabled();
+    fireEvent.click(confirmBtn);
+
+    // Verify reporter details are revealed
+    await waitFor(() => {
+      expect(screen.getByText('IDENTITY REVEALED')).toBeInTheDocument();
+      expect(screen.getByText(/Reason: /i)).toBeInTheDocument();
+    });
+
+    // Verify Privacy Rule 4: nothing persisted in localStorage or sessionStorage
+    expect(localStorage.getItem('reporter')).toBeNull();
+    expect(localStorage.getItem('revealed_reporter')).toBeNull();
+    expect(sessionStorage.getItem('reporter')).toBeNull();
+  });
+
+  it('resets reveal state when incident ID changes (auto-hide on navigation)', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    });
+
+    const { rerender } = render(
+      <ToastProvider>
+        <QueryClientProvider client={queryClient}>
+          <IncidentDetailView incidentId="inc_001" />
+        </QueryClientProvider>
+      </ToastProvider>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Brush fire near Trail 4')).toBeInTheDocument();
+    });
+
+    // Reveal reporter on inc_001
+    fireEvent.click(screen.getByRole('button', { name: /Reveal Identity/i }));
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /Reveal Reporter Identity/i })).toBeInTheDocument();
+    });
+    fireEvent.change(screen.getByPlaceholderText(/Add emergency dispatch ticket/i), {
+      target: { value: 'Audit investigation' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Reveal Reporter & Audit/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('IDENTITY REVEALED')).toBeInTheDocument();
+    });
+
+    // Navigate to inc_002
+    rerender(
+      <ToastProvider>
+        <QueryClientProvider client={queryClient}>
+          <IncidentDetailView incidentId="inc_002" />
+        </QueryClientProvider>
+      </ToastProvider>
+    );
+
+    // Verify inc_002 starts with PRIVACY PROTECTED, reveal state was not carried over!
+    await waitFor(() => {
+      expect(screen.getByText('PRIVACY PROTECTED')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('IDENTITY REVEALED')).not.toBeInTheDocument();
+  });
 });

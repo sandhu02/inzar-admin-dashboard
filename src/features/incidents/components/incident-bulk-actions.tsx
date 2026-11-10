@@ -3,11 +3,12 @@
 import * as React from 'react';
 import { Button } from '@/components/ui/button';
 import { CheckCircle2, XCircle, AlertTriangle, Trash2, X } from 'lucide-react';
+import type { BulkActionType } from '../types';
 
 interface BulkActionsProps {
   selectedCount: number;
   onClearSelection: () => void;
-  onBulkAction: (action: string) => void;
+  onBulkAction: (action: BulkActionType) => void;
 }
 
 export function IncidentBulkActions({

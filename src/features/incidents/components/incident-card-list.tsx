@@ -1,8 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import Image from 'next/image';
-import { ImageIcon, MoreHorizontal, Copy } from 'lucide-react';
+import { MoreHorizontal, Copy } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import {
@@ -16,6 +15,7 @@ import { CategoryChip } from '@/components/status/category-chip';
 import { formatReportedTime, formatAge } from '@/lib/format/date';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmptyState } from '@/components/ui/empty-state';
+import { IncidentThumbnail } from './incident-thumbnail';
 import type { Incident } from '../types';
 
 interface CardListProps {
@@ -130,19 +130,12 @@ export function IncidentCardList({
 
             {/* Middle row: Thumbnail + Title & description */}
             <div className="flex items-start gap-3 my-2">
-              <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg border border-border bg-surface-elevated flex items-center justify-center">
-                {incident.thumbnail_url ? (
-                  <Image
-                    src={incident.thumbnail_url}
-                    alt={incident.title}
-                    fill
-                    sizes="48px"
-                    className="object-cover"
-                  />
-                ) : (
-                  <ImageIcon className="h-5 w-5 text-muted-foreground/40" />
-                )}
-              </div>
+              <IncidentThumbnail
+                id={incident.id}
+                thumbnailUrl={incident.thumbnail_url}
+                title={incident.title}
+                size="md"
+              />
               <div className="flex-1 min-w-0">
                 <h2 className="font-sans font-semibold text-sm text-foreground truncate">
                   {incident.title}

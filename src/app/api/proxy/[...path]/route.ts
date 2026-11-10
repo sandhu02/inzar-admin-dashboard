@@ -366,6 +366,81 @@ async function handleProxy(req: NextRequest, { params }: RouteContext) {
     return NextResponse.json(detail);
   }
 
+  // POST /admin/incidents/bulk
+  if (
+    path.length === 3 &&
+    path[0] === 'admin' &&
+    path[1] === 'incidents' &&
+    path[2] === 'bulk' &&
+    method === 'POST'
+  ) {
+    const body = (await req.json().catch(() => ({}))) as {
+      ids?: string[];
+      action?: string;
+      reason?: string;
+    };
+
+    const reason = body.reason?.trim();
+    if (!reason) {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'REASON_REQUIRED',
+            message: 'A reason is required to perform bulk moderation action.',
+          },
+        },
+        { status: 400 }
+      );
+    }
+
+    const ids = body.ids || [];
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'BAD_REQUEST',
+            message: 'At least one incident ID must be provided.',
+          },
+        },
+        { status: 400 }
+      );
+    }
+
+    const succeeded: string[] = [];
+    const failed: Array<{ id: string; error: { code: string; message: string } }> = [];
+
+    for (const id of ids) {
+      const base = await findIncidentById(id, session.accessToken);
+      if (!base) {
+        failed.push({
+          id,
+          error: { code: 'NOT_FOUND', message: `Incident ${id} was not found.` },
+        });
+        continue;
+      }
+
+      if (body.action === 'approve' && base.review_status === 'removed') {
+        failed.push({
+          id,
+          error: { code: 'STATE_CONFLICT', message: 'Cannot approve a removed incident.' },
+        });
+        continue;
+      }
+
+      const statusUpdates: Partial<IncidentDetail> = {};
+      const action = body.action?.replace('-', '_');
+      if (action === 'approve') statusUpdates.review_status = 'published';
+      else if (action === 'reject') statusUpdates.review_status = 'not_approved';
+      else if (action === 'mark_false') statusUpdates.review_status = 'false_report';
+      else if (action === 'remove') statusUpdates.review_status = 'removed';
+
+      updatedIncidentsCache.set(id, statusUpdates);
+      succeeded.push(id);
+    }
+
+    return NextResponse.json({ succeeded, failed });
+  }
+
   // POST /admin/incidents/:id/reveal-reporter
   if (
     path.length === 4 &&

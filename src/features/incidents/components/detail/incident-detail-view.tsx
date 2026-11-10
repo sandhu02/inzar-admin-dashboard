@@ -60,6 +60,16 @@ export function IncidentDetailView({
   const [revealedLocation, setRevealedLocation] = React.useState<{ lat: number; lng: number } | null>(null);
   const [locationRevealReason, setLocationRevealReason] = React.useState<string | null>(null);
 
+  // Auto-reset reveal state during render whenever target incident ID changes
+  const [prevIncidentId, setPrevIncidentId] = React.useState(incidentId);
+  if (prevIncidentId !== incidentId) {
+    setPrevIncidentId(incidentId);
+    setRevealedReporter(null);
+    setReporterRevealReason(null);
+    setRevealedLocation(null);
+    setLocationRevealReason(null);
+  }
+
   // Fetch Incident Detail Query
   const {
     data: incident,
@@ -88,7 +98,7 @@ export function IncidentDetailView({
     },
     onSuccess: (updatedIncident, variables) => {
       queryClient.setQueryData(['incident-detail', incidentId], updatedIncident);
-      queryClient.invalidateQueries({ queryKey: ['incidents'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-incidents'] });
 
       const actionLabels: Record<ModerationActionType, string> = {
         approve: 'Incident Approved & Published',
@@ -107,6 +117,16 @@ export function IncidentDetailView({
       });
     },
     onError: (err: Error) => {
+      // If state conflict or stale data, refresh incident detail and list
+      if (
+        err.message.toLowerCase().includes('conflict') ||
+        err.message.toLowerCase().includes('state') ||
+        err.message.toLowerCase().includes('not found')
+      ) {
+        queryClient.invalidateQueries({ queryKey: ['incident-detail', incidentId] });
+        queryClient.invalidateQueries({ queryKey: ['admin-incidents'] });
+      }
+
       toast({
         title: 'Action Failed',
         description: err.message,
@@ -270,11 +290,36 @@ export function IncidentDetailView({
           </span>
           <span>·</span>
           <span>Age: {formatAge(incident.reported_at)}</span>
+          {incident.last_confirmed_at && (
+            <>
+              <span>·</span>
+              <span
+                className="text-status-success cursor-help inline-flex items-center gap-1"
+                title={formatUtcTooltip(incident.last_confirmed_at)}
+              >
+                Last confirmed: {formatReportedTime(incident.last_confirmed_at)}
+              </span>
+            </>
+          )}
           {incident.expires_at && (
             <>
               <span>·</span>
-              <span className="text-status-warning">
+              <span
+                className="text-status-warning cursor-help inline-flex items-center gap-1"
+                title={formatUtcTooltip(incident.expires_at)}
+              >
                 Expires: {formatReportedTime(incident.expires_at)}
+              </span>
+            </>
+          )}
+          {incident.published_at && (
+            <>
+              <span>·</span>
+              <span
+                className="text-muted-foreground cursor-help inline-flex items-center gap-1"
+                title={formatUtcTooltip(incident.published_at)}
+              >
+                Last updated: {formatReportedTime(incident.published_at)}
               </span>
             </>
           )}

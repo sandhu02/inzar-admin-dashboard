@@ -17,7 +17,7 @@ export function enrichIncidentDetail(base: Incident): IncidentDetail {
       id: `tl_ai_${base.id}`,
       type: 'ai_reviewed',
       title: 'AI Multi-modal Verification',
-      description: `Vision and NLP classifier verified visual consistency. Category matched to "${base.category.name}" (confidence: 93.8%).`,
+      description: `Vision and NLP classifier verified visual consistency. Category matched to "${base.category.name}".`,
       timestamp: new Date(reportedTime + 2 * 60 * 1000).toISOString(),
       actor: 'Inzar AI Reviewer v2.4',
     },

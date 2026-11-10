@@ -2,10 +2,8 @@
 
 import * as React from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
-import Image from 'next/image';
 import {
   MoreHorizontal,
-  ImageIcon,
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
@@ -38,6 +36,7 @@ import {
   formatUtcTooltip,
 } from '@/lib/format/date';
 import { cn } from '@/lib/utils';
+import { IncidentThumbnail } from './incident-thumbnail';
 import type { Incident } from '../types';
 
 interface GetColumnsOptions {
@@ -131,20 +130,13 @@ export function getIncidentColumns({
         const item = row.original;
         return (
           <div className="flex items-center gap-3 min-w-[220px] max-w-[340px]">
-            {/* Thumbnail */}
-            <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-md border border-border bg-surface-elevated flex items-center justify-center">
-              {item.thumbnail_url ? (
-                <Image
-                  src={item.thumbnail_url}
-                  alt={item.title}
-                  fill
-                  sizes="40px"
-                  className="object-cover"
-                />
-              ) : (
-                <ImageIcon className="h-4 w-4 text-muted-foreground/50" />
-              )}
-            </div>
+            {/* Thumbnail with progressive deferred skeleton loading */}
+            <IncidentThumbnail
+              id={item.id}
+              thumbnailUrl={item.thumbnail_url}
+              title={item.title}
+              size="sm"
+            />
             {/* Title & description */}
             <div className="truncate">
               <span className="font-sans font-medium text-foreground block truncate">

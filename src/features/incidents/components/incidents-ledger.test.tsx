@@ -62,4 +62,23 @@ describe('IncidentsLedger component', () => {
     expect(screen.getByText('Columns')).toBeInTheDocument();
     expect(screen.getByText('Save view')).toBeInTheDocument();
   });
+
+  it('renders a refresh button and supports refreshing incidents', async () => {
+    renderWithProviders(<IncidentsLedger />);
+
+    const refreshButton = screen.getByRole('button', { name: /Refresh incidents/i });
+    expect(refreshButton).toBeInTheDocument();
+    expect(refreshButton).toHaveTextContent('Refresh');
+
+    // Wait for items to be loaded
+    await waitFor(() => {
+      expect(
+        screen.getAllByText('Brush fire near Trail 4').length
+      ).toBeGreaterThan(0);
+    });
+
+    // Clicking refresh should keep button accessible and refresh data
+    refreshButton.click();
+    expect(refreshButton).toBeInTheDocument();
+  });
 });

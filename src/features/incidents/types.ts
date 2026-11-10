@@ -14,6 +14,21 @@ export type IncidentActionType =
   | 'resolve'
   | 're_review';
 
+export type BulkActionType = 'approve' | 'reject' | 'mark_false' | 'remove';
+
+export interface BulkActionFailure {
+  id: string;
+  error: {
+    code: string;
+    message: string;
+  };
+}
+
+export interface BulkActionResponse {
+  succeeded: string[];
+  failed: BulkActionFailure[];
+}
+
 export interface IncidentFilterValues {
   q?: string;
   review_status?: string[];

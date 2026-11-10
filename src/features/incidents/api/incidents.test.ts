@@ -5,6 +5,7 @@ import {
   revealReporter,
   revealExactLocation,
   performIncidentAction,
+  performBulkIncidentAction,
 } from './incidents';
 
 describe('fetchIncidents API integration with MSW', () => {
@@ -216,5 +217,105 @@ describe('Incident detail, audited reveals, and moderation actions API', () => {
     );
 
     expect(updated.review_status).toBe('not_approved');
+  });
+
+  it('marks an incident as false report successfully', async () => {
+    const updated = await performIncidentAction(
+      targetId,
+      'mark_false',
+      'Confirmed drill mistaken for emergency'
+    );
+
+    expect(updated.review_status).toBe('false_report');
+  });
+
+  it('removes and restores an incident within retention window', async () => {
+    const removed = await performIncidentAction(
+      targetId,
+      'remove',
+      'Content retention compliance'
+    );
+    expect(removed.review_status).toBe('removed');
+
+    const restored = await performIncidentAction(
+      targetId,
+      'restore',
+      'Erroneous removal rectified'
+    );
+    expect(restored.review_status).toBe('under_review');
+  });
+
+  it('resolves an incident and marks lifecycle_status as resolved', async () => {
+    const resolved = await performIncidentAction(
+      targetId,
+      'resolve',
+      'Emergency response completed on site'
+    );
+    expect(resolved.lifecycle_status).toBe('resolved');
+  });
+
+  it('re-queues incident for review', async () => {
+    const rereviewed = await performIncidentAction(
+      targetId,
+      're_review',
+      'New imagery uploaded by bystander'
+    );
+    expect(rereviewed.review_status).toBe('under_review');
+  });
+
+  it('returns 409 conflict when trying to approve an already removed incident', async () => {
+    // Soft remove first
+    await performIncidentAction(targetId, 'remove', 'Soft removal for test');
+
+    // Attempting approve on removed incident triggers conflict
+    await expect(
+      performIncidentAction(targetId, 'approve', 'Attempting illegal approval')
+    ).rejects.toThrow(/conflict/i);
+
+    // Clean up by restoring
+    await performIncidentAction(targetId, 'restore', 'Restoring after conflict test');
+  });
+});
+
+describe('Bulk Incident Actions API integration', () => {
+  it('requires a justification reason for bulk action', async () => {
+    await expect(
+      performBulkIncidentAction(['inc_001', 'inc_002'], 'approve', '')
+    ).rejects.toThrow(/reason is required/i);
+  });
+
+  it('successfully bulk approves incidents', async () => {
+    const res = await performBulkIncidentAction(
+      ['inc_001', 'inc_002'],
+      'approve',
+      'Verified via dispatch confirmation'
+    );
+
+    expect(res.succeeded).toContain('inc_001');
+    expect(res.succeeded).toContain('inc_002');
+    expect(res.failed).toHaveLength(0);
+  });
+
+  it('handles partial failures reporting conflicts and non-existent IDs', async () => {
+    // Put inc_001 into removed status
+    await performIncidentAction('inc_001', 'remove', 'Remove for conflict test');
+
+    const res = await performBulkIncidentAction(
+      ['inc_001', 'non_existent_inc_999'],
+      'approve',
+      'Batch approval run'
+    );
+
+    // inc_001 should fail due to state conflict (cannot approve removed incident)
+    // non_existent_inc_999 should fail due to NOT_FOUND
+    expect(res.failed.length).toBeGreaterThanOrEqual(1);
+    const removedFailure = res.failed.find((f) => f.id === 'inc_001');
+    expect(removedFailure?.error.code).toBe('STATE_CONFLICT');
+
+    const notFoundFailure = res.failed.find((f) => f.id === 'non_existent_inc_999');
+    expect(notFoundFailure?.error.code).toBe('NOT_FOUND');
+
+    // Restore inc_001
+    await performIncidentAction('inc_001', 'restore', 'Restoring inc_001');
   });
 });

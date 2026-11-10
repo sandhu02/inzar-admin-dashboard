@@ -227,9 +227,104 @@ export const handlers = [
     }
   ),
 
+  // Bulk incident moderation action
+  http.post(/.*\/admin\/incidents\/bulk(\?|$)/, async ({ request }) => {
+    const authHeader = request.headers.get('Authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return HttpResponse.json(
+        { error: { code: 'UNAUTHORIZED', message: 'Authentication required' } },
+        { status: 401 }
+      );
+    }
+    if (authHeader.includes('user')) {
+      return HttpResponse.json(
+        {
+          error: {
+            code: 'FORBIDDEN',
+            message: 'You do not have permission to perform bulk moderation actions.',
+          },
+        },
+        { status: 403 }
+      );
+    }
+
+    const body = (await request.json().catch(() => ({}))) as {
+      ids?: string[];
+      action?: string;
+      reason?: string;
+    };
+
+    if (!body?.action || !['approve', 'reject', 'mark_false', 'mark-false', 'remove'].includes(body.action)) {
+      return HttpResponse.json(
+        { error: { code: 'BAD_REQUEST', message: 'Valid action is required for bulk operation.' } },
+        { status: 400 }
+      );
+    }
+
+    if (!body?.reason || body.reason.trim().length === 0) {
+      return HttpResponse.json(
+        { error: { code: 'BAD_REQUEST', message: 'Reason is required for bulk action.' } },
+        { status: 400 }
+      );
+    }
+
+    if (!body?.ids || !Array.isArray(body.ids) || body.ids.length === 0) {
+      return HttpResponse.json(
+        { error: { code: 'BAD_REQUEST', message: 'At least one incident ID must be provided.' } },
+        { status: 400 }
+      );
+    }
+
+    if (body.ids.length > 100) {
+      return HttpResponse.json(
+        { error: { code: 'BAD_REQUEST', message: 'Maximum of 100 incidents can be processed in a bulk operation.' } },
+        { status: 400 }
+      );
+    }
+
+    const succeeded: string[] = [];
+    const failed: Array<{ id: string; error: { code: string; message: string } }> = [];
+
+    for (const id of body.ids) {
+      const incident = mockIncidentsDataset.find((inc) => inc.id === id);
+      if (!incident) {
+        failed.push({
+          id,
+          error: { code: 'NOT_FOUND', message: `Incident ${id} was not found.` },
+        });
+        continue;
+      }
+
+      if (body.action === 'approve' && incident.review_status === 'removed') {
+        failed.push({
+          id,
+          error: { code: 'STATE_CONFLICT', message: 'Cannot approve a removed incident. Restore it first.' },
+        });
+        continue;
+      }
+      if (body.action === 'reject' && incident.review_status === 'removed') {
+        failed.push({
+          id,
+          error: { code: 'STATE_CONFLICT', message: 'Cannot reject a removed incident.' },
+        });
+        continue;
+      }
+
+      const normalizedAction = body.action.replace('-', '_');
+      if (normalizedAction === 'approve') incident.review_status = 'published';
+      else if (normalizedAction === 'reject') incident.review_status = 'not_approved';
+      else if (normalizedAction === 'mark_false') incident.review_status = 'false_report';
+      else if (normalizedAction === 'remove') incident.review_status = 'removed';
+
+      succeeded.push(id);
+    }
+
+    return HttpResponse.json({ succeeded, failed });
+  }),
+
   // Perform moderation action on incident
   http.post(
-    /.*\/admin\/incidents\/([a-zA-Z0-9_-]+)\/(approve|reject|mark_false|remove|restore|resolve|re_review)(\?|$)/,
+    /.*\/admin\/incidents\/([a-zA-Z0-9_-]+)\/(approve|reject|mark_false|mark-false|remove|restore|resolve|re_review|rereview)(\?|$)/,
     async ({ request, params }) => {
       const authHeader = request.headers.get('Authorization');
       if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -238,8 +333,21 @@ export const handlers = [
           { status: 401 }
         );
       }
+      if (authHeader.includes('user')) {
+        return HttpResponse.json(
+          {
+            error: {
+              code: 'FORBIDDEN',
+              message: 'You do not have permission to moderate incidents.',
+            },
+          },
+          { status: 403 }
+        );
+      }
+
       const id = params[0] as string;
-      const action = params[1] as string;
+      const rawAction = params[1] as string;
+      const action = rawAction.replace('-', '_');
       const body = (await request.json().catch(() => ({}))) as {
         reason?: string;
         notes?: string;
@@ -249,7 +357,7 @@ export const handlers = [
           {
             error: {
               code: 'BAD_REQUEST',
-              message: `Reason is required for action '${action}'.`,
+              message: `Reason is required for action '${rawAction}'.`,
             },
           },
           { status: 400 }
@@ -263,16 +371,52 @@ export const handlers = [
         );
       }
 
-      const updated = { ...incident };
-      if (action === 'approve') updated.review_status = 'published';
-      else if (action === 'reject') updated.review_status = 'not_approved';
-      else if (action === 'mark_false') updated.review_status = 'false_report';
-      else if (action === 'remove') updated.review_status = 'removed';
-      else if (action === 'restore') updated.review_status = 'under_review';
-      else if (action === 'resolve') updated.lifecycle_status = 'resolved';
-      else if (action === 're_review') updated.review_status = 'under_review';
+      // Check conflict conditions
+      if (action === 'approve' && incident.review_status === 'removed') {
+        return HttpResponse.json(
+          {
+            error: {
+              code: 'STATE_CONFLICT',
+              message: 'State conflict: cannot approve a removed incident. Restore it first.',
+            },
+          },
+          { status: 409 }
+        );
+      }
+      if (action === 'restore' && incident.review_status !== 'removed') {
+        return HttpResponse.json(
+          {
+            error: {
+              code: 'STATE_CONFLICT',
+              message: 'State conflict: incident is not removed and cannot be restored.',
+            },
+          },
+          { status: 409 }
+        );
+      }
 
-      const detail = enrichIncidentDetail(updated);
+      if (action === 'approve') incident.review_status = 'published';
+      else if (action === 'reject') incident.review_status = 'not_approved';
+      else if (action === 'mark_false') incident.review_status = 'false_report';
+      else if (action === 'remove') incident.review_status = 'removed';
+      else if (action === 'restore') incident.review_status = 'under_review';
+      else if (action === 'resolve') incident.lifecycle_status = 'resolved';
+      else if (action === 're_review' || action === 'rereview') incident.review_status = 'under_review';
+
+      const detail = enrichIncidentDetail(incident);
+      detail.timeline = [
+        ...(detail.timeline || []),
+        {
+          id: `tl_${action}_${Date.now()}`,
+          type: 'decision',
+          title: `Action: ${action.replace('_', ' ').toUpperCase()}`,
+          description: `Reason: ${body.reason}${body.notes ? ` · Note: ${body.notes}` : ''}`,
+          timestamp: new Date().toISOString(),
+          actor: 'Moderator',
+          notes: body.notes,
+        },
+      ];
+
       return HttpResponse.json(detail);
     }
   ),

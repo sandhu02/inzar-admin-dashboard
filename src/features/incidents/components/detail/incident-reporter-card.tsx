@@ -89,15 +89,20 @@ export function IncidentReporterCard({
                 </div>
               </div>
 
-              {/* Trust Score Badge */}
+              {/* Reporter ID Badge */}
               <div className="text-right">
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-mono font-bold bg-status-success/15 text-status-success border border-status-success/30">
-                  <ShieldCheck className="h-3.5 w-3.5" />
-                  {reporter?.trust_score ?? 85}% TRUST
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-mono font-bold bg-surface-elevated text-foreground border border-border">
+                  <User className="h-3.5 w-3.5 text-accent" />
+                  {reporter?.id || 'usr_unknown'}
                 </span>
-                <span className="block text-[10px] font-mono text-muted-foreground mt-0.5">
-                  Algorithmic Score
-                </span>
+                {revealReason && (
+                  <span
+                    className="block text-[10px] font-mono text-muted-foreground mt-0.5 max-w-[140px] truncate"
+                    title={revealReason}
+                  >
+                    Reason: {revealReason}
+                  </span>
+                )}
               </div>
             </div>
 

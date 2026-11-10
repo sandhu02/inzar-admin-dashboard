@@ -4,6 +4,8 @@ import * as React from 'react';
 import Image from 'next/image';
 import { ZoomIn, ImageIcon, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import { Skeleton } from '@/components/ui/skeleton';
+import { cn } from '@/lib/utils';
 
 interface PhotoViewerProps {
   mediaUrls?: string[];
@@ -27,6 +29,8 @@ export function IncidentPhotoViewer({
   const [activeIndex, setActiveIndex] = React.useState(0);
   const [zoomOpen, setZoomOpen] = React.useState(false);
   const [imgError, setImgError] = React.useState<Record<string, boolean>>({});
+  const [photoLoaded, setPhotoLoaded] = React.useState<Record<string, boolean>>({});
+  const [thumbLoaded, setThumbLoaded] = React.useState<Record<string, boolean>>({});
 
   const currentPhoto = allPhotos[activeIndex];
   const hasError = currentPhoto ? imgError[currentPhoto] : false;
@@ -54,13 +58,24 @@ export function IncidentPhotoViewer({
         className="group relative w-full h-64 sm:h-80 rounded-xl overflow-hidden border border-border bg-black/40 cursor-zoom-in"
         onClick={() => setZoomOpen(true)}
       >
+        {currentPhoto && !photoLoaded[currentPhoto] && !hasError && (
+          <Skeleton className="absolute inset-0 h-full w-full rounded-none" />
+        )}
         <Image
           src={currentPhoto!}
           alt={`${title} - Photo ${activeIndex + 1}`}
           fill
           sizes="(max-width: 768px) 100vw, 640px"
           priority
-          className="object-contain transition-transform duration-300 group-hover:scale-[1.02]"
+          className={cn(
+            'object-contain transition-transform duration-300 group-hover:scale-[1.02]',
+            currentPhoto && photoLoaded[currentPhoto] ? 'opacity-100' : 'opacity-0'
+          )}
+          onLoad={() => {
+            if (currentPhoto) {
+              setPhotoLoaded((prev) => ({ ...prev, [currentPhoto]: true }));
+            }
+          }}
           onError={() => {
             if (currentPhoto) {
               setImgError((prev) => ({ ...prev, [currentPhoto]: true }));
@@ -95,12 +110,19 @@ export function IncidentPhotoViewer({
                   : 'border-border opacity-70 hover:opacity-100'
               }`}
             >
+              {!thumbLoaded[url] && (
+                <Skeleton className="absolute inset-0 h-full w-full rounded-none" />
+              )}
               <Image
                 src={url}
                 alt={`Thumbnail ${idx + 1}`}
                 fill
                 sizes="64px"
-                className="object-cover"
+                className={cn(
+                  'object-cover transition-opacity duration-200',
+                  thumbLoaded[url] ? 'opacity-100' : 'opacity-0'
+                )}
+                onLoad={() => setThumbLoaded((prev) => ({ ...prev, [url]: true }))}
               />
             </button>
           ))}

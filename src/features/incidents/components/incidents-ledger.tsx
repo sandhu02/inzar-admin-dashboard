@@ -1,14 +1,20 @@
 'use client';
 
 import * as React from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { RowSelectionState } from '@tanstack/react-table';
-import { Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { ErrorBanner } from '@/components/ui/error-banner';
+import { useToast } from '@/components/ui/toast';
 import { DataTable } from '@/components/data-table/data-table';
-import { fetchIncidents } from '../api/incidents';
+import { cn } from '@/lib/utils';
+import {
+  fetchIncidents,
+  performIncidentAction,
+  performBulkIncidentAction,
+} from '../api/incidents';
 import { useIncidentFilters } from '../hooks/use-incident-filters';
 import { useColumnVisibility } from '../hooks/use-column-visibility';
 import { getIncidentColumns } from './incident-columns';
@@ -18,8 +24,14 @@ import { IncidentSavedViews } from './incident-saved-views';
 import { IncidentColumnVisibility } from './incident-column-visibility';
 import { IncidentBulkActions } from './incident-bulk-actions';
 import { IncidentCardList } from './incident-card-list';
+import { ProgressiveMediaProvider } from '../context/progressive-media-context';
 import { IncidentDetailDrawer } from './detail/incident-detail-drawer';
-import type { Incident, SavedView } from '../types';
+import { ActionDialog, type ModerationActionType } from './detail/action-dialog';
+import {
+  BulkActionDialog,
+  BulkPartialFailureDialog,
+} from './bulk-action-dialog';
+import type { Incident, SavedView, BulkActionType, BulkActionFailure } from '../types';
 
 function IncidentSearchBox({
   value,
@@ -73,6 +85,8 @@ export function IncidentsLedger() {
     clearAllFilters,
   } = useIncidentFilters();
 
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
   const { columnVisibility, setColumnVisibility } = useColumnVisibility();
 
   // Table row selection state
@@ -81,13 +95,29 @@ export function IncidentsLedger() {
   // Active drawer incident ID
   const [selectedIncidentId, setSelectedIncidentId] = React.useState<string | null>(null);
 
+  // Bulk action dialog states
+  const [selectedBulkAction, setSelectedBulkAction] = React.useState<BulkActionType | null>(null);
+  const [bulkFailures, setBulkFailures] = React.useState<{
+    failures: BulkActionFailure[];
+    succeededCount: number;
+    action: BulkActionType;
+  } | null>(null);
+
+  // Row action dialog state
+  const [rowActionTarget, setRowActionTarget] = React.useState<{
+    action: ModerationActionType;
+    incident: Incident;
+  } | null>(null);
+
   // Query server state
   const {
     data,
     isLoading,
+    isFetching,
     isError,
     error,
     refetch,
+    dataUpdatedAt,
   } = useQuery({
     queryKey: ['admin-incidents', activeFilters],
     queryFn: () => fetchIncidents(activeFilters),
@@ -106,19 +136,81 @@ export function IncidentsLedger() {
     setRowSelection({});
   };
 
-  const handleBulkAction = (action: string) => {
+  const handleBulkAction = (action: BulkActionType) => {
+    setSelectedBulkAction(action);
+  };
+
+  const handleConfirmBulkAction = async (action: BulkActionType, reason: string) => {
     const selectedIncidents = selectedIndices
       .map((idx) => items[parseInt(idx, 10)])
       .filter(Boolean) as Incident[];
-    console.info(`Bulk ${action} for ${selectedIncidents.length} items`);
+
+    const ids = selectedIncidents.map((inc) => inc.id);
+    if (ids.length === 0) return;
+
+    const res = await performBulkIncidentAction(ids, action, reason);
+
+    // Refresh list data
+    queryClient.invalidateQueries({ queryKey: ['admin-incidents'] });
+    setRowSelection({});
+
+    if (res.failed && res.failed.length > 0) {
+      setBulkFailures({
+        failures: res.failed,
+        succeededCount: res.succeeded.length,
+        action,
+      });
+      toast({
+        title: 'Bulk Action Completed with Warnings',
+        description: `${res.succeeded.length} succeeded, ${res.failed.length} failed.`,
+        variant: 'warning',
+      });
+    } else {
+      toast({
+        title: 'Bulk Action Completed',
+        description: `Successfully applied "${action.replace('_', ' ')}" to ${res.succeeded.length} incidents.`,
+        variant: 'success',
+      });
+    }
   };
 
   const handleRowAction = (action: string, incident: Incident) => {
     if (action === 'view') {
       setSelectedIncidentId(incident.id);
-    } else {
-      console.info(`Action ${action} on incident ${incident.id}`);
+    } else if (
+      action === 'approve' ||
+      action === 'reject' ||
+      action === 'mark_false' ||
+      action === 'remove' ||
+      action === 'restore' ||
+      action === 'resolve' ||
+      action === 're_review'
+    ) {
+      setRowActionTarget({
+        action: action as ModerationActionType,
+        incident,
+      });
     }
+  };
+
+  const handleConfirmRowAction = async (
+    action: ModerationActionType,
+    reason: string,
+    notes?: string
+  ) => {
+    if (!rowActionTarget) return;
+    const targetId = rowActionTarget.incident.id;
+
+    await performIncidentAction(targetId, action, reason, notes);
+
+    queryClient.invalidateQueries({ queryKey: ['admin-incidents'] });
+    queryClient.invalidateQueries({ queryKey: ['incident-detail', targetId] });
+
+    toast({
+      title: 'Action Completed',
+      description: `Incident ${targetId} updated via ${action.replace('_', ' ')}.`,
+      variant: action === 'reject' || action === 'mark_false' ? 'warning' : 'success',
+    });
   };
 
   const columns = React.useMemo(
@@ -149,8 +241,23 @@ export function IncidentsLedger() {
           </p>
         </div>
 
-        {/* Saved Views and Column Visibility */}
+        {/* Actions: Refresh, Saved Views, and Column Visibility */}
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => refetch()}
+            disabled={isFetching}
+            className="h-9 font-mono text-xs border-border bg-surface hover:bg-surface-elevated text-foreground"
+            title="Refresh incidents"
+            aria-label="Refresh incidents"
+          >
+            <RefreshCw
+              className={cn('h-3.5 w-3.5 sm:mr-1.5', isFetching && 'animate-spin')}
+            />
+            <span className="hidden sm:inline">Refresh</span>
+          </Button>
+
           <IncidentSavedViews
             currentFilters={activeFilters}
             activeViewId={rawParams.view || 'default'}
@@ -254,45 +361,48 @@ export function IncidentsLedger() {
         />
       )}
 
-      {/* Desktop Table View (>= 1024px) */}
-      <div className="hidden lg:block">
-        <DataTable
-          columns={columns}
-          data={items}
-          isLoading={isLoading}
-          emptyTitle="No incidents found"
-          emptyDescription="No reports match your current filter criteria. Try adjusting or clearing filters."
-          rowSelection={rowSelection}
-          onRowSelectionChange={setRowSelection}
-          columnVisibility={columnVisibility}
-          onColumnVisibilityChange={setColumnVisibility}
-          onRowClick={(row) => setSelectedIncidentId(row.id)}
-        />
-      </div>
+      {/* Progressive Media Container: Loads data instantaneously with skeletons, retrieving images one by one */}
+      <ProgressiveMediaProvider items={items} refreshKey={dataUpdatedAt}>
+        {/* Desktop Table View (>= 1024px) */}
+        <div className="hidden lg:block">
+          <DataTable
+            columns={columns}
+            data={items}
+            isLoading={isLoading}
+            emptyTitle="No incidents found"
+            emptyDescription="No reports match your current filter criteria. Try adjusting or clearing filters."
+            rowSelection={rowSelection}
+            onRowSelectionChange={setRowSelection}
+            columnVisibility={columnVisibility}
+            onColumnVisibilityChange={setColumnVisibility}
+            onRowClick={(row) => setSelectedIncidentId(row.id)}
+          />
+        </div>
 
-      {/* Mobile/Tablet Card View (< 1024px) */}
-      <div className="lg:hidden">
-        <IncidentCardList
-          items={items}
-          isLoading={isLoading}
-          selectedIds={
-            new Set(selectedIndices.map((idx) => items[parseInt(idx, 10)]?.id || ''))
-          }
-          onToggleSelect={(id) => {
-            const index = items.findIndex((it) => it.id === id);
-            if (index !== -1) {
-              setRowSelection((prev) => {
-                const next = { ...prev };
-                if (next[index]) delete next[index];
-                else next[index] = true;
-                return next;
-              });
+        {/* Mobile/Tablet Card View (< 1024px) */}
+        <div className="lg:hidden">
+          <IncidentCardList
+            items={items}
+            isLoading={isLoading}
+            selectedIds={
+              new Set(selectedIndices.map((idx) => items[parseInt(idx, 10)]?.id || ''))
             }
-          }}
-          onRowAction={handleRowAction}
-          onRowClick={(incident) => setSelectedIncidentId(incident.id)}
-        />
-      </div>
+            onToggleSelect={(id) => {
+              const index = items.findIndex((it) => it.id === id);
+              if (index !== -1) {
+                setRowSelection((prev) => {
+                  const next = { ...prev };
+                  if (next[index]) delete next[index];
+                  else next[index] = true;
+                  return next;
+                });
+              }
+            }}
+            onRowAction={handleRowAction}
+            onRowClick={(incident) => setSelectedIncidentId(incident.id)}
+          />
+        </div>
+      </ProgressiveMediaProvider>
 
       {/* Pagination Footer matching Page 2 */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 text-xs font-mono text-muted-foreground border-t border-border">
@@ -331,6 +441,37 @@ export function IncidentsLedger() {
         open={!!selectedIncidentId}
         onOpenChange={(open) => !open && setSelectedIncidentId(null)}
       />
+
+      {/* Bulk Action Dialog */}
+      <BulkActionDialog
+        action={selectedBulkAction}
+        selectedCount={selectedCount}
+        open={!!selectedBulkAction}
+        onOpenChange={(open) => !open && setSelectedBulkAction(null)}
+        onConfirm={handleConfirmBulkAction}
+      />
+
+      {/* Bulk Partial Failure Reporting Modal */}
+      {bulkFailures && (
+        <BulkPartialFailureDialog
+          open={!!bulkFailures}
+          onOpenChange={(open) => !open && setBulkFailures(null)}
+          succeededCount={bulkFailures.succeededCount}
+          failures={bulkFailures.failures}
+          action={bulkFailures.action}
+        />
+      )}
+
+      {/* Single Row Action Dialog */}
+      {rowActionTarget && (
+        <ActionDialog
+          action={rowActionTarget.action}
+          incidentTitle={rowActionTarget.incident.title}
+          open={!!rowActionTarget}
+          onOpenChange={(open) => !open && setRowActionTarget(null)}
+          onConfirm={handleConfirmRowAction}
+        />
+      )}
     </div>
   );
 }
