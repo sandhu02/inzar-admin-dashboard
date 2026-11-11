@@ -12,3 +12,6 @@ Record of engineering decisions made during development.
 | 2026-11-08 | SVG mini-map for location radius filter | Zero-dependency, lightweight, interactive spatial filtering centered on Islamabad coordinates. |
 | 2026-11-08 | Stripping coordinates and reporter ID in list endpoint | Strict privacy enforcement: list views only show place labels and fuzzed pins, requiring explicit audit reveal for full PII. |
 | 2026-11-08 | LocalStorage fallback for saved views and column visibility | Provides persistent custom views across browser refreshes ahead of `/admin/me/preferences` backend implementation. |
+| 2026-11-11 | Keyboard-first Moderation Queue with strict input isolation | Allows operators to process backlogged incidents at speed (A/R/F/J/K/?) without mouse interaction, while preventing unintended hotkeys during text input. |
+| 2026-11-11 | 5-second undo strictly for incident approvals | Approvals are non-destructive and optimistically advance with a 5s countdown undo window. Destructive actions (`reject`, `mark_false`) require justification reasons and explicit confirmation. |
+| 2026-11-11 | Incident-level Community Flags grouping with `nuqs` URL state | Aggregates disparate community reports per incident with distinct flagger counts and deep-linkable status/type filters (`/flags?status=pending`). |

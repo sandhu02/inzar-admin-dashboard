@@ -1,10 +1,11 @@
 import * as React from 'react';
+import { ModerationQueueView } from '@/features/queue/components/moderation-queue-view';
+
+export const metadata = {
+  title: 'Moderation Queue | Inzar Admin',
+  description: 'Fast-track moderation workflow for pending incident reports.',
+};
 
 export default function QueuePage() {
-  return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-bold font-sans text-foreground">Moderation Queue</h1>
-      <p className="text-sm text-muted-foreground">Queue management interface (Phase 4 integration).</p>
-    </div>
-  );
+  return <ModerationQueueView />;
 }

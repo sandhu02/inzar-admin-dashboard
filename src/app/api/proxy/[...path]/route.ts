@@ -8,6 +8,7 @@ import {
 } from '@/lib/auth/session';
 import { refreshSingleFlight } from '@/lib/auth/refresh';
 import { enrichIncidentDetail } from '@/features/incidents/api/mock-detail';
+import { mockIncidentsDataset } from '@/mocks/incidents-data';
 import type { Incident, IncidentDetail } from '@/features/incidents/types';
 
 type RouteContext = {
@@ -135,6 +136,29 @@ function adaptBackendIncidents(backendData: any, searchParams: URLSearchParams) 
 }
 
 async function findIncidentById(id: string, accessToken: string): Promise<Incident | null> {
+  // If id is a mock incident (starts with inc_), skip remote backend query
+  if (id.startsWith('inc_')) {
+    const mockMatch = mockIncidentsDataset.find((inc) => inc.id === id);
+    if (mockMatch) {
+      const override = updatedIncidentsCache.get(id);
+      return {
+        id: mockMatch.id,
+        title: mockMatch.title,
+        description: mockMatch.description,
+        category: mockMatch.category,
+        review_status: (override?.review_status || mockMatch.review_status) as Incident['review_status'],
+        lifecycle_status: (override?.lifecycle_status || mockMatch.lifecycle_status) as Incident['lifecycle_status'],
+        place_label: mockMatch.place_label,
+        fuzzed_location: mockMatch.fuzzed_location,
+        reported_at: mockMatch.reported_at,
+        has_media: mockMatch.has_media,
+        thumbnail_url: mockMatch.thumbnail_url,
+        flags_count: mockMatch.flags_count,
+      };
+    }
+    return null;
+  }
+
   const headers: Record<string, string> = {
     Authorization: `Bearer ${accessToken}`,
     Accept: 'application/json',
@@ -146,7 +170,7 @@ async function findIncidentById(id: string, accessToken: string): Promise<Incide
   try {
     const singleRes = await fetch(
       `${env.API_BASE_URL}/admin/incidents/${encodeURIComponent(id)}`,
-      { headers }
+      { headers, signal: AbortSignal.timeout(1500) }
     );
     if (singleRes.ok) {
       const contentType = singleRes.headers.get('content-type') || '';
@@ -283,7 +307,26 @@ async function findIncidentById(id: string, accessToken: string): Promise<Incide
     // live backend query failed
   }
 
-  // Real backend did not find the incident
+  // 3. Fallback to mock dataset if real backend does not have incident
+  const mockMatch = mockIncidentsDataset.find((inc) => inc.id === id);
+  if (mockMatch) {
+    const override = updatedIncidentsCache.get(id);
+    return {
+      id: mockMatch.id,
+      title: mockMatch.title,
+      description: mockMatch.description,
+      category: mockMatch.category,
+      review_status: (override?.review_status || mockMatch.review_status) as Incident['review_status'],
+      lifecycle_status: (override?.lifecycle_status || mockMatch.lifecycle_status) as Incident['lifecycle_status'],
+      place_label: mockMatch.place_label,
+      fuzzed_location: mockMatch.fuzzed_location,
+      reported_at: mockMatch.reported_at,
+      has_media: mockMatch.has_media,
+      thumbnail_url: mockMatch.thumbnail_url,
+      flags_count: mockMatch.flags_count,
+    };
+  }
+
   return null;
 }
 
@@ -340,7 +383,279 @@ async function handleProxy(req: NextRequest, { params }: RouteContext) {
     }
   }
 
-  // 3. Special Handling: Incident Details and Moderation Actions
+  // 3. Special Handling: Moderation Queue, Community Flags, and Incident Actions
+  // GET /admin/moderation/queue
+  if (pathString === 'admin/moderation/queue' && method === 'GET') {
+    // Attempt forwarding to real backend
+    try {
+      const backendQueueRes = await fetch(`${env.API_BASE_URL}/admin/moderation/queue${search}`, {
+        headers: {
+          Authorization: `Bearer ${session.accessToken}`,
+          Accept: 'application/json',
+          'X-Tunnel-Skip-AntiPhishing-Page': 'true',
+          'bypass-tunnel-reminder': 'true',
+        },
+        signal: AbortSignal.timeout(1500),
+      });
+      if (backendQueueRes.ok) {
+        const ct = backendQueueRes.headers.get('content-type') || '';
+        if (ct.includes('application/json')) {
+          const data = await backendQueueRes.json();
+          if (data && Array.isArray(data.items) && data.items.length > 0) {
+            return NextResponse.json(data);
+          }
+        }
+      }
+    } catch {
+      // fallback to mock dataset
+    }
+
+    // Fallback: Query incidents with review_status=under_review,needs_review
+    const category = req.nextUrl.searchParams.get('category_id') || req.nextUrl.searchParams.get('category');
+    const pendingItems = mockIncidentsDataset.filter((inc) => {
+      const cached = updatedIncidentsCache.get(inc.id);
+      const st = cached?.review_status || inc.review_status;
+      return st === 'under_review' || st === 'needs_review';
+    });
+
+    let filtered = pendingItems;
+    if (category && category !== 'all') {
+      const cats = category.split(',').map((c) => c.trim().toLowerCase());
+      filtered = filtered.filter(
+        (inc) =>
+          cats.includes(inc.category.id.toLowerCase()) ||
+          cats.includes(inc.category.slug.toLowerCase())
+      );
+    }
+    filtered.sort((a, b) => new Date(a.reported_at).getTime() - new Date(b.reported_at).getTime());
+
+    const now = Date.now();
+    const oldestItem = filtered[0];
+    const oldestItemAgeMinutes = oldestItem
+      ? Math.max(1, Math.round((now - new Date(oldestItem.reported_at).getTime()) / 60000))
+      : 0;
+
+    const items = filtered.map((inc) => {
+      const detail = enrichIncidentDetail(inc);
+      const cached = updatedIncidentsCache.get(inc.id);
+      if (cached) Object.assign(detail, cached);
+      return detail;
+    });
+
+    return NextResponse.json({
+      items,
+      queue_size: filtered.length,
+      oldest_item_age_minutes: oldestItemAgeMinutes,
+      oldest_reported_at: oldestItem?.reported_at || null,
+    });
+  }
+
+  // POST /admin/moderation/:id/:action (approve, reject)
+  if (
+    path.length === 4 &&
+    path[0] === 'admin' &&
+    path[1] === 'moderation' &&
+    (path[3] === 'approve' || path[3] === 'reject') &&
+    method === 'POST'
+  ) {
+    const incidentId = path[2]!;
+    const action = path[3]!;
+    const body = await req.json().catch(() => ({}));
+    const reason = body.reason?.trim() || (action === 'approve' ? 'Approved in moderation queue' : '');
+    const notes = body.notes?.trim();
+
+    if (action === 'reject' && !reason) {
+      return NextResponse.json(
+        { error: { code: 'REASON_REQUIRED', message: 'A reason is required to reject an incident.' } },
+        { status: 400 }
+      );
+    }
+
+    if (!incidentId.startsWith('inc_')) {
+      try {
+        await fetch(`${env.API_BASE_URL}/admin/moderation/${incidentId}/${action}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.accessToken}`,
+          },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(1500),
+        });
+      } catch {
+        // ignore
+      }
+    }
+
+    const base =
+      (await findIncidentById(incidentId, session.accessToken)) ||
+      mockIncidentsDataset.find((inc) => inc.id === incidentId);
+    if (!base) {
+      return NextResponse.json(
+        { error: { code: 'NOT_FOUND', message: `Incident ${incidentId} was not found.` } },
+        { status: 404 }
+      );
+    }
+
+    const detail = enrichIncidentDetail(base);
+    const statusUpdates: Partial<IncidentDetail> = {
+      review_status: action === 'approve' ? 'published' : 'not_approved',
+    };
+    updatedIncidentsCache.set(incidentId, statusUpdates);
+    Object.assign(detail, statusUpdates);
+
+    detail.timeline = [
+      ...(detail.timeline || []),
+      {
+        id: `tl_mod_${action}_${Date.now()}`,
+        type: 'decision',
+        title: action === 'approve' ? 'Approved by Moderator' : 'Rejected by Moderator',
+        description: action === 'approve' ? 'Incident published from queue' : `Reason: ${reason}`,
+        timestamp: new Date().toISOString(),
+        actor: session.user.display_name || session.user.email,
+        notes: notes || reason,
+      },
+    ];
+
+    return NextResponse.json(detail);
+  }
+
+  // GET /admin/flags
+  if (pathString === 'admin/flags' && method === 'GET') {
+    try {
+      const backendFlagsRes = await fetch(`${env.API_BASE_URL}/admin/flags${search}`, {
+        headers: {
+          Authorization: `Bearer ${session.accessToken}`,
+          Accept: 'application/json',
+          'X-Tunnel-Skip-AntiPhishing-Page': 'true',
+          'bypass-tunnel-reminder': 'true',
+        },
+        signal: AbortSignal.timeout(1500),
+      });
+      if (backendFlagsRes.ok) {
+        const ct = backendFlagsRes.headers.get('content-type') || '';
+        if (ct.includes('application/json')) {
+          const data = await backendFlagsRes.json();
+          if (data && Array.isArray(data.items) && data.items.length > 0) {
+            return NextResponse.json(data);
+          }
+        }
+      }
+    } catch {
+      // fallback
+    }
+
+    // Mock flags from dataset
+    const typeFilter = req.nextUrl.searchParams.get('type') || 'all';
+    const statusFilter = req.nextUrl.searchParams.get('status') || 'all';
+    const categoryFilter = req.nextUrl.searchParams.get('category_id') || req.nextUrl.searchParams.get('category');
+    const searchQuery = (req.nextUrl.searchParams.get('q') || '').toLowerCase().trim();
+
+    const flaggedIncidents = mockIncidentsDataset.filter((inc) => (inc.flags_count ?? 0) > 0);
+
+    const groups: Array<{
+      incident_id: string;
+      incident_title: string;
+      incident_description: string;
+      incident_thumbnail_url: string | null;
+      category: Incident['category'];
+      review_status: string;
+      lifecycle_status: string;
+      place_label: string;
+      reported_at: string;
+      flags_count: number;
+      distinct_flaggers_count: number;
+      flags: Array<{
+        id: string;
+        incident_id: string;
+        type: 'incorrect' | 'abuse' | 'resolved' | 'other';
+        reason: string;
+        created_at: string;
+        flagger_count: number;
+        status: 'pending' | 'reviewed' | 'dismissed';
+      }>;
+    }> = [];
+
+    let totalAwaiting = 0;
+
+    for (const inc of flaggedIncidents) {
+      if (categoryFilter && categoryFilter !== 'all') {
+        const cats = categoryFilter.split(',').map((c) => c.trim().toLowerCase());
+        if (!cats.includes(inc.category.id.toLowerCase()) && !cats.includes(inc.category.slug.toLowerCase())) {
+          continue;
+        }
+      }
+
+      if (searchQuery) {
+        const matchTitle = inc.title.toLowerCase().includes(searchQuery);
+        const matchDesc = inc.description.toLowerCase().includes(searchQuery);
+        const matchPlace = inc.place_label.toLowerCase().includes(searchQuery);
+        if (!matchTitle && !matchDesc && !matchPlace) continue;
+      }
+
+      const cached = updatedIncidentsCache.get(inc.id);
+      const detail = enrichIncidentDetail(inc);
+      if (cached) Object.assign(detail, cached);
+
+      let flags = (detail.flags || []).map((fl) => ({
+        id: fl.id,
+        incident_id: inc.id,
+        type: fl.type as 'incorrect' | 'abuse' | 'resolved' | 'other',
+        reason: fl.reason,
+        created_at: fl.created_at,
+        flagger_count: fl.flagger_count ?? 1,
+        status: fl.status as 'pending' | 'reviewed' | 'dismissed',
+      }));
+
+      if (typeFilter !== 'all') {
+        flags = flags.filter((f) => f.type === typeFilter);
+      }
+
+      if (statusFilter !== 'all') {
+        flags = flags.filter((f) => f.status === statusFilter);
+      }
+
+      if (flags.length === 0) continue;
+
+      const distinctFlaggers = flags.reduce((sum, f) => sum + f.flagger_count, 0);
+      totalAwaiting += flags.filter((f) => f.status === 'pending').length;
+
+      groups.push({
+        incident_id: inc.id,
+        incident_title: inc.title,
+        incident_description: inc.description,
+        incident_thumbnail_url: inc.thumbnail_url,
+        category: inc.category,
+        review_status: detail.review_status,
+        lifecycle_status: detail.lifecycle_status,
+        place_label: inc.place_label,
+        reported_at: inc.reported_at,
+        flags_count: flags.length,
+        distinct_flaggers_count: Math.max(flags.length, distinctFlaggers),
+        flags,
+      });
+    }
+
+    return NextResponse.json({
+      items: groups,
+      total_count: groups.length,
+      awaiting_count: totalAwaiting,
+      distinct_incidents_count: groups.length,
+    });
+  }
+
+  // PATCH /admin/flags/:id
+  if (path.length === 3 && path[0] === 'admin' && path[1] === 'flags' && method === 'PATCH') {
+    const flagId = path[2]!;
+    const body = (await req.json().catch(() => ({}))) as { status?: string; notes?: string };
+    return NextResponse.json({
+      id: flagId,
+      status: body.status || 'dismissed',
+      notes: body.notes,
+      updated_at: new Date().toISOString(),
+    });
+  }
+
   // GET /admin/incidents/:id
   if (path.length === 3 && path[0] === 'admin' && path[1] === 'incidents' && method === 'GET') {
     const incidentId = path[2]!;
@@ -537,10 +852,26 @@ async function handleProxy(req: NextRequest, { params }: RouteContext) {
     path[0] === 'admin' &&
     path[1] === 'incidents' &&
     method === 'POST' &&
-    ['approve', 'reject', 'mark_false', 'remove', 'restore', 'resolve', 're_review'].includes(path[3]!)
+    [
+      'approve',
+      'reject',
+      'mark_false',
+      'mark-false',
+      'remove',
+      'restore',
+      'resolve',
+      're_review',
+      'rereview',
+    ].includes(path[3]!)
   ) {
     const incidentId = path[2]!;
-    const action = path[3]!;
+    const rawAction = path[3]!;
+    const action =
+      rawAction === 'mark-false'
+        ? 'mark_false'
+        : rawAction === 'rereview'
+          ? 're_review'
+          : rawAction;
     const body = await req.json().catch(() => ({}));
     const reason = body.reason?.trim();
     const notes = body.notes?.trim();
@@ -558,31 +889,35 @@ async function handleProxy(req: NextRequest, { params }: RouteContext) {
     }
 
     // Try forwarding approve/reject to backend if available
-    if (action === 'approve') {
-      try {
-        await fetch(`${env.API_BASE_URL}/admin/moderation/${incidentId}/approve`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session.accessToken}`,
-          },
-          body: JSON.stringify({ notes: notes || reason }),
-        });
-      } catch {
-        // proceed
-      }
-    } else if (action === 'reject') {
-      try {
-        await fetch(`${env.API_BASE_URL}/admin/moderation/${incidentId}/reject`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session.accessToken}`,
-          },
-          body: JSON.stringify({ reason }),
-        });
-      } catch {
-        // proceed
+    if (!incidentId.startsWith('inc_')) {
+      if (action === 'approve') {
+        try {
+          await fetch(`${env.API_BASE_URL}/admin/moderation/${incidentId}/approve`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${session.accessToken}`,
+            },
+            body: JSON.stringify({ notes: notes || reason }),
+            signal: AbortSignal.timeout(1500),
+          });
+        } catch {
+          // proceed
+        }
+      } else if (action === 'reject') {
+        try {
+          await fetch(`${env.API_BASE_URL}/admin/moderation/${incidentId}/reject`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${session.accessToken}`,
+            },
+            body: JSON.stringify({ reason }),
+            signal: AbortSignal.timeout(1500),
+          });
+        } catch {
+          // proceed
+        }
       }
     }
 

@@ -1,10 +1,7 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, act } from '@testing-library/react';
+import { describe, it, expect } from 'vitest';
+import { render, screen } from '@testing-library/react';
 import { IncidentThumbnail } from './incident-thumbnail';
-import {
-  ProgressiveMediaProvider,
-  useProgressiveMedia,
-} from '../context/progressive-media-context';
+import { ProgressiveMediaProvider } from '../context/progressive-media-context';
 import type { Incident } from '../types';
 
 function createMockIncident(id: string, thumbnailUrl: string | null = 'https://example.com/photo.jpg'): Incident {

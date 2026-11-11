@@ -42,6 +42,7 @@ export function ProgressiveMediaProvider({
   refreshKey,
   children,
 }: ProgressiveMediaProviderProps) {
+  'use no memo';
   const [allowedIds, setAllowedIds] = React.useState<Set<string>>(() => new Set());
   const [loadedIds, setLoadedIds] = React.useState<Set<string>>(() => new Set());
   const [errorIds, setErrorIds] = React.useState<Set<string>>(() => new Set());
@@ -55,7 +56,9 @@ export function ProgressiveMediaProvider({
   }, [items]);
 
   const mediaItemsRef = React.useRef(mediaItems);
-  mediaItemsRef.current = mediaItems;
+  React.useEffect(() => {
+    mediaItemsRef.current = mediaItems;
+  }, [mediaItems]);
 
   const clearTimers = React.useCallback(() => {
     if (activeTimerRef.current) {
@@ -67,6 +70,8 @@ export function ProgressiveMediaProvider({
       safetyTimerRef.current = null;
     }
   }, []);
+
+  const advanceQueueRef = React.useRef<(nextIndex: number) => void>(() => {});
 
   const allowItemAtIndex = React.useCallback(
     (index: number) => {
@@ -86,10 +91,9 @@ export function ProgressiveMediaProvider({
 
       // Safety timeout: if image hangs, automatically advance to next item
       safetyTimerRef.current = setTimeout(() => {
-        advanceQueue(index + 1);
+        advanceQueueRef.current(index + 1);
       }, SAFETY_TIMEOUT_MS);
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [clearTimers]
   );
 
@@ -105,6 +109,10 @@ export function ProgressiveMediaProvider({
     },
     [clearTimers, allowItemAtIndex]
   );
+
+  React.useEffect(() => {
+    advanceQueueRef.current = advanceQueue;
+  }, [advanceQueue]);
 
   const handleItemCompleted = React.useCallback(
     (id: string, isSuccess: boolean) => {
@@ -153,6 +161,7 @@ export function ProgressiveMediaProvider({
   React.useEffect(() => {
     clearTimers();
     currentIndexRef.current = 0;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setAllowedIds(new Set());
     setLoadedIds(new Set());
     setErrorIds(new Set());

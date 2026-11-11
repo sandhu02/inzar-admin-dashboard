@@ -30,6 +30,20 @@ export function IncidentThumbnail({
   const iconSizeClasses = size === 'md' ? 'h-5 w-5' : 'h-4 w-4';
   const imageSizes = size === 'md' ? '48px' : '40px';
 
+  const allowed = canLoad(id);
+  const loaded = isLoaded(id);
+  const errored = hasError(id);
+
+  // In test environment (jsdom), browser image loading events do not fire automatically
+  React.useEffect(() => {
+    if (process.env.NODE_ENV === 'test' && Boolean(thumbnailUrl) && allowed && !loaded && !errored) {
+      const timer = setTimeout(() => {
+        onImageLoaded(id);
+      }, 5);
+      return () => clearTimeout(timer);
+    }
+  }, [allowed, loaded, errored, id, onImageLoaded, thumbnailUrl]);
+
   // No media attached to incident
   if (!thumbnailUrl) {
     return (
@@ -45,20 +59,6 @@ export function IncidentThumbnail({
       </div>
     );
   }
-
-  const allowed = canLoad(id);
-  const loaded = isLoaded(id);
-  const errored = hasError(id);
-
-  // In test environment (jsdom), browser image loading events do not fire automatically
-  React.useEffect(() => {
-    if (process.env.NODE_ENV === 'test' && allowed && !loaded && !errored) {
-      const timer = setTimeout(() => {
-        onImageLoaded(id);
-      }, 5);
-      return () => clearTimeout(timer);
-    }
-  }, [allowed, loaded, errored, id, onImageLoaded]);
 
   return (
     <div

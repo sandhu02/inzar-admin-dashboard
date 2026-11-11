@@ -170,3 +170,112 @@ Until backend updates are published, these contracts are implemented via MSW han
 - **Method**: PUT
 - **Description**: Updates admin user preferences and saved filter presets.
 - **Body**: Same shape as preferences response.
+
+---
+
+## 5. Moderation Queue and Community Flags
+
+### `GET /admin/moderation/queue`
+- **Method**: GET
+- **Description**: Returns all incident reports awaiting review (`review_status` is `needs_review` or `under_review`), sorted by oldest first, with calculated queue metadata.
+- **Query Parameters**:
+  - `category_id`: string (optional category filter)
+  - `limit`: integer (default 50)
+- **Response Shape**:
+  ```json
+  {
+    "items": [
+      {
+        "id": "inc_...",
+        "title": "string",
+        "description": "string",
+        "category": { "id": "cat_...", "slug": "fire", "name": "Fire", "color_hex": "#FF6B2C", "icon_key": "flame" },
+        "review_status": "under_review",
+        "lifecycle_status": "active",
+        "flags_count": 2,
+        "place_label": "F-7 · Margalla Rd",
+        "fuzzed_location": { "lat": 33.7294, "lng": 73.0551 },
+        "reported_at": "2026-11-08T09:23:00Z",
+        "has_media": true,
+        "thumbnail_url": "https://res.cloudinary.com/...",
+        "media_urls": ["https://res.cloudinary.com/..."],
+        "verification_label": "ai_reviewed",
+        "flags": [
+          {
+            "id": "flag_1",
+            "type": "incorrect",
+            "reason": "Duplicate report",
+            "created_at": "2026-11-08T09:30:00Z",
+            "status": "pending"
+          }
+        ]
+      }
+    ],
+    "queue_size": 14,
+    "oldest_item_age_minutes": 38,
+    "oldest_reported_at": "2026-11-08T13:52:00Z"
+  }
+  ```
+
+### `POST /admin/moderation/{id}/approve`
+- **Method**: POST
+- **Description**: Approves an incident from the moderation queue and transitions `review_status` to `published`.
+- **Body**: `{ "notes": "string (optional)" }`
+- **Audit**: Writes audit log entry for staff approval decision.
+
+### `POST /admin/moderation/{id}/reject`
+- **Method**: POST
+- **Description**: Rejects an incident with a required justification reason, transitioning `review_status` to `not_approved`.
+- **Body**: `{ "reason": "string (required)", "notes": "string (optional)" }`
+- **Audit**: Writes audit log entry for staff rejection decision.
+
+### `GET /admin/flags`
+- **Method**: GET
+- **Description**: Returns community-reported flags grouped by incident report, including distinct flagger counts and flag details.
+- **Query Parameters**:
+  - `type`: string (`all`, `incorrect`, `abuse`, `resolved`)
+  - `status`: string (`all`, `pending`, `reviewed`, `dismissed`)
+  - `category_id`: string (optional category filter)
+  - `q`: string (search in incident title or description)
+  - `limit`: integer (default 50)
+- **Response Shape**:
+  ```json
+  {
+    "items": [
+      {
+        "incident_id": "inc_001",
+        "incident_title": "Brush fire near Trail 4",
+        "incident_description": "Brush fire on the slope above Trail 4...",
+        "incident_thumbnail_url": "https://images.unsplash.com/...",
+        "category": { "id": "cat_3", "slug": "fire", "name": "Fire", "color_hex": "#EF4444", "icon_key": "flame" },
+        "review_status": "under_review",
+        "lifecycle_status": "active",
+        "place_label": "F-7 · Margalla Rd",
+        "reported_at": "2026-11-08T14:28:00Z",
+        "flags_count": 2,
+        "distinct_flaggers_count": 2,
+        "flags": [
+          {
+            "id": "flag_inc_001_1",
+            "incident_id": "inc_001",
+            "type": "resolved",
+            "reason": "Fire services have put out the flames.",
+            "created_at": "2026-11-08T14:38:00Z",
+            "flagger_count": 1,
+            "status": "pending"
+          }
+        ]
+      }
+    ],
+    "total_count": 6,
+    "awaiting_count": 9,
+    "distinct_incidents_count": 6
+  }
+  ```
+
+### `PATCH /admin/flags/{id}`
+- **Method**: PATCH
+- **Description**: Updates the review state of a community flag (e.g. dismissing or resolving).
+- **Body**: `{ "status": "pending" | "reviewed" | "dismissed", "notes": "string (optional)" }`
+- **Audit**: Writes audit log entry.
+

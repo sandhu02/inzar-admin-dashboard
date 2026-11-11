@@ -69,7 +69,7 @@ export default function OverviewPage() {
           </p>
           <p className="text-4xl font-bold font-mono text-foreground">9</p>
           <Link
-            href="/flags"
+            href="/flags?status=pending"
             className="inline-flex items-center gap-1.5 text-xs font-mono font-medium text-muted-foreground hover:text-accent transition-colors"
           >
             <span>ACROSS 6 INCIDENTS · VIEW FLAGS</span>

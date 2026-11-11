@@ -5,6 +5,8 @@ import { enrichIncidentDetail } from '../features/incidents/api/mock-detail';
 
 export { mockUsers, mockCategories, queryMockIncidents };
 
+export const flagsStatusOverrides = new Map<string, string>();
+
 export const handlers = [
   // Auth login
   http.post(/.*\/auth\/login(\?|$)/, async ({ request }) => {
@@ -442,6 +444,273 @@ export const handlers = [
       }
       const detail = enrichIncidentDetail(incident);
       return HttpResponse.json(detail);
+    }
+  ),
+
+  // Moderation queue list
+  http.get(/.*\/admin\/moderation\/queue(\?|$)/, ({ request }) => {
+    const authHeader = request.headers.get('Authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return HttpResponse.json(
+        { error: { code: 'UNAUTHORIZED', message: 'Authentication required' } },
+        { status: 401 }
+      );
+    }
+
+    const url = new URL(request.url);
+    const categoryFilter = url.searchParams.get('category_id') || url.searchParams.get('category');
+
+    let pendingItems = mockIncidentsDataset.filter(
+      (inc) => inc.review_status === 'under_review' || inc.review_status === 'needs_review'
+    );
+
+    if (categoryFilter && categoryFilter !== 'all') {
+      const cats = categoryFilter.split(',').map((c) => c.trim().toLowerCase());
+      pendingItems = pendingItems.filter(
+        (inc) =>
+          cats.includes(inc.category.id.toLowerCase()) ||
+          cats.includes(inc.category.slug.toLowerCase())
+      );
+    }
+
+    // Sort by reported_at ascending (oldest first for queue)
+    pendingItems.sort(
+      (a, b) => new Date(a.reported_at).getTime() - new Date(b.reported_at).getTime()
+    );
+
+    const now = Date.now();
+    const oldestItem = pendingItems[0];
+    const oldestItemAgeMinutes = oldestItem
+      ? Math.max(1, Math.round((now - new Date(oldestItem.reported_at).getTime()) / 60000))
+      : 0;
+
+    const enrichedItems = pendingItems.map((inc) => enrichIncidentDetail(inc));
+
+    return HttpResponse.json({
+      items: enrichedItems,
+      queue_size: pendingItems.length,
+      oldest_item_age_minutes: oldestItemAgeMinutes,
+      oldest_reported_at: oldestItem ? oldestItem.reported_at : null,
+    });
+  }),
+
+  // Moderation approve & reject shortcuts endpoints (/admin/moderation/:id/approve, reject)
+  http.post(
+    /.*\/admin\/moderation\/([a-zA-Z0-9_-]+)\/(approve|reject)(\?|$)/,
+    async ({ request, params }) => {
+      const authHeader = request.headers.get('Authorization');
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return HttpResponse.json(
+          { error: { code: 'UNAUTHORIZED', message: 'Authentication required' } },
+          { status: 401 }
+        );
+      }
+      if (authHeader.includes('user')) {
+        return HttpResponse.json(
+          {
+            error: {
+              code: 'FORBIDDEN',
+              message: 'You do not have permission to moderate incidents.',
+            },
+          },
+          { status: 403 }
+        );
+      }
+
+      const id = params[0] as string;
+      const action = params[1] as string;
+      const body = (await request.json().catch(() => ({}))) as {
+        reason?: string;
+        notes?: string;
+      };
+
+      if (action === 'reject' && (!body?.reason || body.reason.trim().length === 0)) {
+        return HttpResponse.json(
+          {
+            error: {
+              code: 'BAD_REQUEST',
+              message: 'Reason is required to reject an incident report.',
+            },
+          },
+          { status: 400 }
+        );
+      }
+
+      const incident = mockIncidentsDataset.find((inc) => inc.id === id);
+      if (!incident) {
+        return HttpResponse.json(
+          { error: { code: 'NOT_FOUND', message: 'Incident not found' } },
+          { status: 404 }
+        );
+      }
+
+      if (action === 'approve') {
+        incident.review_status = 'published';
+      } else {
+        incident.review_status = 'not_approved';
+      }
+
+      const detail = enrichIncidentDetail(incident);
+      detail.timeline = [
+        ...(detail.timeline || []),
+        {
+          id: `tl_mod_${action}_${Date.now()}`,
+          type: 'decision',
+          title: action === 'approve' ? 'Approved by Moderator' : 'Rejected by Moderator',
+          description: action === 'approve' ? 'Incident published from queue' : `Reason: ${body.reason}`,
+          timestamp: new Date().toISOString(),
+          actor: 'Moderator',
+          notes: body.notes || body.reason,
+        },
+      ];
+
+      return HttpResponse.json(detail);
+    }
+  ),
+
+  // Flags list grouped by incident
+  http.get(/.*\/admin\/flags(\?|$)/, ({ request }) => {
+    const authHeader = request.headers.get('Authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return HttpResponse.json(
+        { error: { code: 'UNAUTHORIZED', message: 'Authentication required' } },
+        { status: 401 }
+      );
+    }
+
+    const url = new URL(request.url);
+    const typeFilter = url.searchParams.get('type') || 'all';
+    const statusFilter = url.searchParams.get('status') || 'all';
+    const categoryFilter = url.searchParams.get('category_id') || url.searchParams.get('category');
+    const searchQuery = (url.searchParams.get('q') || '').toLowerCase().trim();
+
+    // Collect all flagged incidents
+    const flaggedIncidents = mockIncidentsDataset.filter((inc) => (inc.flags_count ?? 0) > 0);
+
+    const groups: Array<{
+      incident_id: string;
+      incident_title: string;
+      incident_description: string;
+      incident_thumbnail_url: string | null;
+      category: (typeof mockCategories)[number];
+      review_status: string;
+      lifecycle_status: string;
+      place_label: string;
+      reported_at: string;
+      flags_count: number;
+      distinct_flaggers_count: number;
+      flags: Array<{
+        id: string;
+        incident_id: string;
+        type: 'incorrect' | 'abuse' | 'resolved' | 'other';
+        reason: string;
+        created_at: string;
+        flagger_count: number;
+        status: 'pending' | 'reviewed' | 'dismissed';
+      }>;
+    }> = [];
+
+    let totalAwaiting = 0;
+
+    for (const inc of flaggedIncidents) {
+      if (categoryFilter && categoryFilter !== 'all') {
+        const cats = categoryFilter.split(',').map((c) => c.trim().toLowerCase());
+        if (!cats.includes(inc.category.id.toLowerCase()) && !cats.includes(inc.category.slug.toLowerCase())) {
+          continue;
+        }
+      }
+
+      if (searchQuery) {
+        const matchTitle = inc.title.toLowerCase().includes(searchQuery);
+        const matchDesc = inc.description.toLowerCase().includes(searchQuery);
+        const matchPlace = inc.place_label.toLowerCase().includes(searchQuery);
+        if (!matchTitle && !matchDesc && !matchPlace) continue;
+      }
+
+      const detail = enrichIncidentDetail(inc);
+      let flags = (detail.flags || []).map((fl) => {
+        const overrideStatus = flagsStatusOverrides.get(fl.id);
+        return {
+          id: fl.id,
+          incident_id: inc.id,
+          type: fl.type as 'incorrect' | 'abuse' | 'resolved' | 'other',
+          reason: fl.reason,
+          created_at: fl.created_at,
+          flagger_count: fl.flagger_count ?? 1,
+          status: (overrideStatus || fl.status) as 'pending' | 'reviewed' | 'dismissed',
+        };
+      });
+
+      if (typeFilter !== 'all') {
+        flags = flags.filter((f) => f.type === typeFilter);
+      }
+
+      if (statusFilter !== 'all') {
+        flags = flags.filter((f) => f.status === statusFilter);
+      }
+
+      if (flags.length === 0) continue;
+
+      const distinctFlaggers = flags.reduce((sum, f) => sum + f.flagger_count, 0);
+      totalAwaiting += flags.filter((f) => f.status === 'pending').length;
+
+      groups.push({
+        incident_id: inc.id,
+        incident_title: inc.title,
+        incident_description: inc.description,
+        incident_thumbnail_url: inc.thumbnail_url,
+        category: inc.category,
+        review_status: inc.review_status,
+        lifecycle_status: inc.lifecycle_status,
+        place_label: inc.place_label,
+        reported_at: inc.reported_at,
+        flags_count: flags.length,
+        distinct_flaggers_count: Math.max(flags.length, distinctFlaggers),
+        flags,
+      });
+    }
+
+    return HttpResponse.json({
+      items: groups,
+      total_count: groups.length,
+      awaiting_count: totalAwaiting,
+      distinct_incidents_count: groups.length,
+    });
+  }),
+
+  // Update flag status (dismiss, resolve)
+  http.patch(
+    /.*\/admin\/flags\/([a-zA-Z0-9_-]+)(\?|$)/,
+    async ({ request, params }) => {
+      const authHeader = request.headers.get('Authorization');
+      if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return HttpResponse.json(
+          { error: { code: 'UNAUTHORIZED', message: 'Authentication required' } },
+          { status: 401 }
+        );
+      }
+
+      const flagId = params[0] as string;
+      const body = (await request.json().catch(() => ({}))) as {
+        status?: string;
+        notes?: string;
+      };
+
+      if (!body?.status) {
+        return HttpResponse.json(
+          { error: { code: 'BAD_REQUEST', message: 'Status is required to update flag.' } },
+          { status: 400 }
+        );
+      }
+
+      flagsStatusOverrides.set(flagId, body.status);
+
+      return HttpResponse.json({
+        id: flagId,
+        status: body.status,
+        notes: body.notes,
+        updated_at: new Date().toISOString(),
+      });
     }
   ),
 ];
