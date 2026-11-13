@@ -43,6 +43,7 @@ export interface IncidentFilterValues {
   near_lat?: number;
   near_lng?: number;
   radius_km?: number;
+  bbox?: string;
   sort?: string;
   cursor?: string;
   view?: string;

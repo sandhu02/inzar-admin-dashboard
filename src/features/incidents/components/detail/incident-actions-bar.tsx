@@ -45,6 +45,7 @@ export function IncidentActionsBar({
           type="button"
           size="sm"
           variant="default"
+          data-testid="action-btn-approve"
           disabled={disabled || !canApprove}
           onClick={() => onSelectAction('approve')}
           className="h-8 text-xs font-medium disabled:opacity-40"

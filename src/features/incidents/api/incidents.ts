@@ -50,6 +50,7 @@ export async function fetchIncidents(
     near_lat,
     near_lng,
     radius_km,
+    bbox,
     sort = 'reported_at:desc',
   } = params;
 
@@ -60,6 +61,7 @@ export async function fetchIncidents(
   };
 
   if (cursor) query.cursor = cursor;
+  if (bbox) query.bbox = bbox;
   if (q && q.trim()) query.q = q.trim();
 
   if (review_status && review_status.length > 0) {

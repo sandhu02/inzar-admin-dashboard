@@ -110,8 +110,8 @@ const LIFECYCLE_STATUSES: MockIncident['lifecycle_status'][] = [
   'hidden',
 ];
 
-// Generate 520 deterministic incidents
-export function generateMockIncidents(): MockIncident[] {
+// Generate deterministic incidents (520 by default; callers can pass 5000 for stress testing)
+export function generateMockIncidents(totalCount = 520): MockIncident[] {
   const incidents: MockIncident[] = [];
   const now = new Date('2026-11-08T14:30:00Z').getTime();
 
@@ -239,8 +239,8 @@ export function generateMockIncidents(): MockIncident[] {
     }
   );
 
-  // Generate 512 additional diverse incidents
-  for (let i = 9; i <= 520; i++) {
+  // Generate additional diverse incidents up to totalCount (default 5000 for MapLibre clustering & stress testing)
+  for (let i = 9; i <= totalCount; i++) {
     const catIndex = i % mockCategories.length;
     const category = mockCategories[catIndex]!;
     const catTitles = TITLES[category.slug] || TITLES.other!;
@@ -257,12 +257,12 @@ export function generateMockIncidents(): MockIncident[] {
     const minutesAgo = (i * 83) % (30 * 24 * 60);
     const reportedAt = new Date(now - minutesAgo * 60 * 1000).toISOString();
 
-    // Coordinates in Islamabad cluster
-    const lat = 33.68 + ((i * 17) % 600) / 10000;
-    const lng = 73.02 + ((i * 23) % 600) / 10000;
+    // Coordinates in Islamabad cluster (spread across 33.65 - 33.78 lat, 72.95 - 73.15 lng)
+    const lat = 33.65 + ((i * 17) % 1300) / 10000;
+    const lng = 72.95 + ((i * 23) % 2000) / 10000;
 
     incidents.push({
-      id: `inc_${i.toString().padStart(3, '0')}`,
+      id: `inc_${i.toString().padStart(4, '0')}`,
       title,
       description: `Reported incident at ${place}. Community verification active.`,
       category,
@@ -303,7 +303,7 @@ export function queryMockIncidents(searchParams: URLSearchParams) {
   const cursorParam = searchParams.get('cursor');
   const limit = Math.min(
     Math.max(1, Number(searchParams.get('limit')) || 25),
-    100
+    5000
   );
   const q = searchParams.get('q')?.toLowerCase()?.trim();
   const reviewStatusParam = searchParams.get('review_status');
@@ -436,7 +436,11 @@ export function queryMockIncidents(searchParams: URLSearchParams) {
       !isNaN(minLon) &&
       !isNaN(minLat) &&
       !isNaN(maxLon) &&
-      !isNaN(maxLat)
+      !isNaN(maxLat) &&
+      maxLon > minLon &&
+      maxLat > minLat &&
+      maxLon - minLon > 0.005 &&
+      maxLat - minLat > 0.005
     ) {
       items = items.filter(
         (inc) =>

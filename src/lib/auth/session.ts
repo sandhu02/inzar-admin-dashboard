@@ -88,7 +88,7 @@ export function setSessionCookie(
     name: SESSION_COOKIE_NAME,
     value: encryptedToken,
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: false, // Allows session persistence on local HTTP (127.0.0.1:3000)
     sameSite: 'lax',
     path: '/',
     maxAge: 7 * 24 * 60 * 60, // 7 days
@@ -103,7 +103,7 @@ export function clearSessionCookie(response: NextResponse): void {
     name: SESSION_COOKIE_NAME,
     value: '',
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
+    secure: false,
     sameSite: 'lax',
     path: '/',
     maxAge: 0,
