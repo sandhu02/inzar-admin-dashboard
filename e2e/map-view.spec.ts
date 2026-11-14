@@ -24,7 +24,7 @@ test.describe('Phase 5: Map View and Geographic Intelligence', () => {
     const width = page.viewportSize()?.width ?? 1440;
 
     // Accessible list is visible by default
-    const listbox = page.getByTestId('map-accessible-list');
+    const listbox = page.getByTestId('map-accessible-list').first();
     if (!(await listbox.isVisible())) {
       await page.getByTestId('map-toggle-list-btn').click();
     }
@@ -116,6 +116,68 @@ test.describe('Phase 5: Map View and Geographic Intelligence', () => {
     expect(Math.abs(resetZoom - 12)).toBeLessThan(1);
   });
 
+  test('panning and dragging map retains new viewport position without resetting to default', async ({
+    page,
+  }) => {
+    await loginAsAdmin(page);
+    await page.goto('/map');
+    await expect(page.getByTestId('maplibre-canvas-container')).toBeVisible();
+
+    // Wait for map instance
+    await page.waitForFunction(() => {
+      const map = (window as unknown as {
+        __mapInstance?: {
+          getCenter?: () => { lng: number; lat: number };
+        };
+      }).__mapInstance;
+      return map && typeof map.getCenter === 'function';
+    }, { timeout: 15000 });
+
+    const initialCenter = await page.evaluate(() => {
+      const map = (window as unknown as {
+        __mapInstance?: { getCenter: () => { lng: number; lat: number } };
+      }).__mapInstance;
+      return map ? map.getCenter() : null;
+    });
+
+    expect(initialCenter).not.toBeNull();
+
+    // Pan the map by 80px horizontally and 60px vertically (works across full desktop and narrow tablet viewports)
+    await page.evaluate(() => {
+      const map = (window as unknown as {
+        __mapInstance?: { panBy: (offset: [number, number], options?: object) => void };
+      }).__mapInstance;
+      map?.panBy([80, 60], { duration: 300 });
+    });
+
+    // Wait for panned center and assert position persists
+    await expect.poll(async () => {
+      return page.evaluate(() => {
+        const map = (window as unknown as {
+          __mapInstance?: { getCenter: () => { lng: number; lat: number } };
+        }).__mapInstance;
+        return map ? map.getCenter() : null;
+      });
+    }, { timeout: 10000 }).not.toEqual(initialCenter);
+
+    const pannedCenter = await page.evaluate(() => {
+      const map = (window as unknown as {
+        __mapInstance?: { getCenter: () => { lng: number; lat: number } };
+      }).__mapInstance;
+      return map ? map.getCenter() : null;
+    });
+
+    expect(pannedCenter).not.toBeNull();
+    const lngDiff = Math.abs((pannedCenter?.lng ?? 0) - (initialCenter?.lng ?? 0));
+    const latDiff = Math.abs((pannedCenter?.lat ?? 0) - (initialCenter?.lat ?? 0));
+    expect(lngDiff + latDiff).toBeGreaterThan(0.0005);
+
+    // Visible incident count must stay positive
+    const counter = page.getByTestId('map-visible-counter');
+    await expect(counter).toBeVisible({ timeout: 10000 });
+    await expect(counter).not.toHaveText(/0 visible/, { timeout: 10000 });
+  });
+
   test('filter updates visible incidents and synchronizes with URL parameters', async ({
     page,
   }) => {
@@ -146,7 +208,7 @@ test.describe('Phase 5: Map View and Geographic Intelligence', () => {
     await expect(page.getByTestId('map-view-container')).toBeVisible();
 
     // Open list if not already open
-    const listbox = page.getByTestId('map-accessible-list');
+    const listbox = page.getByTestId('map-accessible-list').first();
     if (!(await listbox.isVisible())) {
       await page.getByTestId('map-toggle-list-btn').click();
     }
@@ -184,7 +246,7 @@ test.describe('Phase 5: Map View and Geographic Intelligence', () => {
     await page.goto('/map');
 
     // Ensure list is visible
-    const listbox = page.getByTestId('map-accessible-list');
+    const listbox = page.getByTestId('map-accessible-list').first();
     if (!(await listbox.isVisible())) {
       await page.getByTestId('map-toggle-list-btn').click();
     }
@@ -214,7 +276,7 @@ test.describe('Phase 5: Map View and Geographic Intelligence', () => {
     await loginAsAdmin(page);
     await page.goto('/map');
 
-    const listbox = page.getByTestId('map-accessible-list');
+    const listbox = page.getByTestId('map-accessible-list').first();
     if (!(await listbox.isVisible())) {
       await page.getByTestId('map-toggle-list-btn').click();
     }

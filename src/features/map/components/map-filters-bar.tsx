@@ -299,7 +299,10 @@ export function MapFiltersBar({
         </div>
 
         {/* Live Counters */}
-        <div className="text-[11px] font-mono text-muted-foreground whitespace-nowrap hidden sm:block">
+        <div
+          data-testid="map-visible-counter"
+          className="text-[11px] font-mono text-muted-foreground whitespace-nowrap hidden sm:block"
+        >
           <span className="font-semibold text-foreground">{visibleCount}</span> visible
           {totalMatchingCount > visibleCount && (
             <span> / {totalMatchingCount} total</span>

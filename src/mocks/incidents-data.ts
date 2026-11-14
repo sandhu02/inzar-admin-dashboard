@@ -42,6 +42,12 @@ const PLACES = [
   'I-9 · Industrial Area',
   'G-11 · Srinagar Hwy',
   'D-12 · Margalla Foot',
+  'Rawalpindi · Saddar',
+  'Murree Rd · Chandni Chowk',
+  'Faizabad · Interchange',
+  'Bahria Town · Phase 4',
+  'Chak Shahzad · Park Rd',
+  'G-13 · Kashmir Hwy',
 ];
 
 const TITLES: Record<string, string[]> = {
@@ -257,9 +263,31 @@ export function generateMockIncidents(totalCount = 520): MockIncident[] {
     const minutesAgo = (i * 83) % (30 * 24 * 60);
     const reportedAt = new Date(now - minutesAgo * 60 * 1000).toISOString();
 
-    // Coordinates in Islamabad cluster (spread across 33.65 - 33.78 lat, 72.95 - 73.15 lng)
-    const lat = 33.65 + ((i * 17) % 1300) / 10000;
-    const lng = 72.95 + ((i * 23) % 2000) / 10000;
+    // Realistic regional distribution across Islamabad & Rawalpindi metropolitan clusters
+    let lat: number;
+    let lng: number;
+    const cluster = i % 5;
+    if (cluster === 0) {
+      // Islamabad Central / Margalla (F-6, F-7, F-8, Blue Area, E-7)
+      lat = 33.71 + ((i * 17) % 600) / 10000;
+      lng = 73.03 + ((i * 23) % 700) / 10000;
+    } else if (cluster === 1) {
+      // Islamabad South (I-8, I-9, H-8, Faizabad)
+      lat = 33.66 + ((i * 13) % 500) / 10000;
+      lng = 73.04 + ((i * 19) % 700) / 10000;
+    } else if (cluster === 2) {
+      // Rawalpindi (Saddar, Murree Rd, Satellite Town)
+      lat = 33.58 + ((i * 11) % 700) / 10000;
+      lng = 73.03 + ((i * 29) % 800) / 10000;
+    } else if (cluster === 3) {
+      // West Twin Cities (G-11, G-13, Srinagar Hwy, N-5)
+      lat = 33.63 + ((i * 19) % 700) / 10000;
+      lng = 72.93 + ((i * 31) % 900) / 10000;
+    } else {
+      // East Twin Cities (Expressway, Park Rd, Rawal Lake, Bahria)
+      lat = 33.56 + ((i * 23) % 1400) / 10000;
+      lng = 73.10 + ((i * 17) % 1100) / 10000;
+    }
 
     incidents.push({
       id: `inc_${i.toString().padStart(4, '0')}`,

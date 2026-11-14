@@ -41,31 +41,49 @@ export function IncidentMap({
   const [mapError, setMapError] = React.useState<string | null>(null);
   const [currentZoom, setCurrentZoom] = React.useState<number>(ISLAMABAD_DEFAULT_ZOOM);
 
+  // Stabilize callbacks and props via refs to prevent tearing down the map
+  const onSelectIncidentRef = React.useRef(onSelectIncident);
+  const onBoundsChangeRef = React.useRef(onBoundsChange);
+  const selectedIncidentIdRef = React.useRef(selectedIncidentId);
+  const activeThemeRef = React.useRef(resolvedTheme);
+
   // Convert incidents to GeoJSON (HARD PRIVACY: strictly fuzzed coordinates)
   const geojsonData = React.useMemo(() => {
     return incidentsToGeoJSON(incidents);
   }, [incidents]);
 
+  const geojsonDataRef = React.useRef(geojsonData);
+
+  React.useEffect(() => {
+    onSelectIncidentRef.current = onSelectIncident;
+    onBoundsChangeRef.current = onBoundsChange;
+    selectedIncidentIdRef.current = selectedIncidentId;
+    activeThemeRef.current = resolvedTheme;
+    geojsonDataRef.current = geojsonData;
+  });
+
   // Track map bounds when moving / zooming
   const notifyBounds = React.useCallback(() => {
-    if (!mapRef.current || !onBoundsChange) return;
+    if (!mapRef.current || !onBoundsChangeRef.current) return;
     try {
       const bounds = mapRef.current.getBounds();
-      const west = bounds.getWest();
-      const south = bounds.getSouth();
-      const east = bounds.getEast();
-      const north = bounds.getNorth();
+      const sw = bounds.getSouthWest().wrap();
+      const ne = bounds.getNorthEast().wrap();
+      const west = sw.lng;
+      const south = Math.max(-85, sw.lat);
+      const east = ne.lng;
+      const north = Math.min(85, ne.lat);
       if (east <= west || north <= south) return;
       if (Math.abs(east - west) < 0.005 || Math.abs(north - south) < 0.005) return;
       const bboxStr = `${west.toFixed(5)},${south.toFixed(5)},${east.toFixed(5)},${north.toFixed(5)}`;
-      onBoundsChange(bboxStr);
+      onBoundsChangeRef.current(bboxStr);
       setCurrentZoom(Math.round(mapRef.current.getZoom() * 10) / 10);
     } catch {
       // ignore
     }
-  }, [onBoundsChange]);
+  }, []);
 
-  // Setup layers and sources once style is loaded
+  // Setup layers and sources once style is loaded (stable callback)
   const setupLayers = React.useCallback((map: maplibregl.Map) => {
     if (!map.isStyleLoaded()) return;
 
@@ -74,11 +92,16 @@ export function IncidentMap({
     if (!map.getSource('incidents')) {
       map.addSource('incidents', {
         type: 'geojson',
-        data: geojsonData,
+        data: geojsonDataRef.current,
         cluster: true,
         clusterMaxZoom: 14,
         clusterRadius: 50,
       });
+    } else {
+      const source = map.getSource('incidents') as maplibregl.GeoJSONSource | undefined;
+      if (source) {
+        source.setData(geojsonDataRef.current);
+      }
     }
 
     // 1. Clustered circles layer
@@ -145,7 +168,7 @@ export function IncidentMap({
         filter: [
           'all',
           ['!has', 'point_count'],
-          ['==', 'id', selectedIncidentId || ''],
+          ['==', 'id', selectedIncidentIdRef.current || ''],
         ],
         paint: {
           'circle-radius': 17,
@@ -168,14 +191,14 @@ export function IncidentMap({
           'circle-color': ['get', 'category_color'],
           'circle-radius': [
             'case',
-            ['==', ['get', 'id'], selectedIncidentId || ''],
+            ['==', ['get', 'id'], selectedIncidentIdRef.current || ''],
             10,
             7.5,
           ],
           'circle-stroke-width': 2,
           'circle-stroke-color': [
             'case',
-            ['==', ['get', 'id'], selectedIncidentId || ''],
+            ['==', ['get', 'id'], selectedIncidentIdRef.current || ''],
             '#FFFFFF',
             '#12110F',
           ],
@@ -198,15 +221,15 @@ export function IncidentMap({
         },
       });
     }
-  }, [geojsonData, selectedIncidentId]);
+  }, []);
 
   // Initialize Map
   React.useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
 
     try {
-      const activeTheme = resolvedTheme === 'light' ? 'light' : 'dark';
-      const mapStyle = getMapStyle(activeTheme, env.NEXT_PUBLIC_MAP_STYLE_URL);
+      const initialTheme = activeThemeRef.current === 'light' ? 'light' : 'dark';
+      const mapStyle = getMapStyle(initialTheme, env.NEXT_PUBLIC_MAP_STYLE_URL);
 
       const map = new maplibregl.Map({
         container: containerRef.current,
@@ -268,7 +291,7 @@ export function IncidentMap({
       map.on('click', 'unclustered-point', (e: maplibregl.MapLayerMouseEvent) => {
         const feature = e.features?.[0];
         if (feature?.properties?.id) {
-          onSelectIncident(feature.properties.id as string);
+          onSelectIncidentRef.current(feature.properties.id as string);
         }
       });
 
@@ -322,7 +345,18 @@ export function IncidentMap({
       }, 0);
     }
 
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined' && containerRef.current) {
+      resizeObserver = new ResizeObserver(() => {
+        if (mapRef.current) {
+          mapRef.current.resize();
+        }
+      });
+      resizeObserver.observe(containerRef.current);
+    }
+
     return () => {
+      resizeObserver?.disconnect();
       if (typeof window !== 'undefined') {
         delete (window as unknown as { __mapInstance?: maplibregl.Map }).__mapInstance;
       }
@@ -332,7 +366,7 @@ export function IncidentMap({
         isLoadedRef.current = false;
       }
     };
-  }, [setupLayers, notifyBounds, onSelectIncident, resolvedTheme]);
+  }, [setupLayers, notifyBounds]);
 
   // Update GeoJSON data when incidents array changes
   React.useEffect(() => {

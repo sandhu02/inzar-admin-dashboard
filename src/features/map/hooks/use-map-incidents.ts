@@ -1,6 +1,6 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { useState, useEffect, useRef } from 'react';
 import { fetchIncidents } from '@/features/incidents/api/incidents';
 import type { IncidentFilterValues } from '@/features/incidents/types';
@@ -58,6 +58,7 @@ export function useMapIncidents({
       });
       return response;
     },
+    placeholderData: keepPreviousData,
     staleTime: 30_000,
   });
 

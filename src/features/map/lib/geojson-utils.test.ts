@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { queryMockIncidents } from '@/mocks/incidents-data';
 import { incidentsToGeoJSON, isIncidentInBbox } from './geojson-utils';
 import type { Incident } from '@/features/incidents/types';
 
@@ -91,5 +92,22 @@ describe('geojson-utils', () => {
 
     expect(isIncidentInBbox(inc, enclosingBbox)).toBe(true);
     expect(isIncidentInBbox(inc, outsideBbox)).toBe(false);
+  });
+
+  it('queryMockIncidents with bbox returns matching items', () => {
+    const params = new URLSearchParams({
+      bbox: '72.95,33.65,73.15,33.78',
+    });
+    const res = queryMockIncidents(params);
+    expect(res.total_count).toBeGreaterThan(0);
+  });
+
+  it('checks MapLibre LngLatBounds methods', async () => {
+    const maplibregl = await import('maplibre-gl');
+    const bounds = new maplibregl.LngLatBounds([73.0, 33.6], [73.2, 33.8]);
+    const sw = bounds.getSouthWest();
+    expect(typeof sw.wrap).toBe('function');
+    const wrapped = sw.wrap();
+    expect(wrapped.lng).toBeCloseTo(73.0);
   });
 });
