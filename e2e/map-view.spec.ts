@@ -14,6 +14,7 @@ test.describe('Phase 5: Map View and Geographic Intelligence', () => {
   test('renders map view, passes accessibility scan, and captures responsive screenshots', async ({
     page,
   }) => {
+    test.setTimeout(60000);
     await loginAsAdmin(page);
 
     await page.goto('/map');

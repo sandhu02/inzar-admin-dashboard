@@ -2,22 +2,23 @@ import type { StyleSpecification, Map as MapLibreMap } from 'maplibre-gl';
 import { CATEGORY_GLYPH_SVGS } from './map-constants';
 
 /**
- * Standard Inzar Warm Graphite dark style specification.
- * Falls back to dark graphite background (#12110F) if network tiles are unreachable.
+ * Standard Inzar Warm Graphite dark style specification using OpenStreetMap tiles.
+ * Uses raster dimming and desaturation paint properties to render a clean dark map without watermarks.
  */
 export const INZAR_DARK_STYLE: StyleSpecification = {
   version: 8,
-  name: 'Inzar Dark Warm Graphite',
+  name: 'Inzar Dark Warm Graphite (OpenStreetMap)',
   sources: {
-    carto_dark_tiles: {
+    osm_tiles: {
       type: 'raster',
       tiles: [
-        'https://a.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png',
-        'https://b.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png',
-        'https://c.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}.png',
+        'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
+        'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
+        'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png',
       ],
       tileSize: 256,
-      attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+      attribution:
+        '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors',
     },
   },
   layers: [
@@ -29,31 +30,38 @@ export const INZAR_DARK_STYLE: StyleSpecification = {
       },
     },
     {
-      id: 'carto_dark_layer',
+      id: 'osm_dark_layer',
       type: 'raster',
-      source: 'carto_dark_tiles',
+      source: 'osm_tiles',
       minzoom: 0,
-      maxzoom: 20,
+      maxzoom: 19,
+      paint: {
+        'raster-opacity': 0.72,
+        'raster-brightness-max': 0.45,
+        'raster-contrast': 0.35,
+        'raster-saturation': -0.7,
+      },
     },
   ],
 };
 
 /**
- * Standard Inzar Warm Bone light style specification.
+ * Standard Inzar Warm Bone light style specification using OpenStreetMap tiles.
  */
 export const INZAR_LIGHT_STYLE: StyleSpecification = {
   version: 8,
-  name: 'Inzar Light Warm',
+  name: 'Inzar Light Warm (OpenStreetMap)',
   sources: {
-    carto_light_tiles: {
+    osm_tiles: {
       type: 'raster',
       tiles: [
-        'https://a.basemaps.cartocdn.com/rastertiles/light_all/{z}/{x}/{y}.png',
-        'https://b.basemaps.cartocdn.com/rastertiles/light_all/{z}/{x}/{y}.png',
-        'https://c.basemaps.cartocdn.com/rastertiles/light_all/{z}/{x}/{y}.png',
+        'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
+        'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
+        'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png',
       ],
       tileSize: 256,
-      attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+      attribution:
+        '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap</a> contributors',
     },
   },
   layers: [
@@ -65,11 +73,14 @@ export const INZAR_LIGHT_STYLE: StyleSpecification = {
       },
     },
     {
-      id: 'carto_light_layer',
+      id: 'osm_light_layer',
       type: 'raster',
-      source: 'carto_light_tiles',
+      source: 'osm_tiles',
       minzoom: 0,
-      maxzoom: 20,
+      maxzoom: 19,
+      paint: {
+        'raster-opacity': 0.95,
+      },
     },
   ],
 };
