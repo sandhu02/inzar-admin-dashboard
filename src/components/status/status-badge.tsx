@@ -8,6 +8,10 @@ import {
   Trash2,
   Check,
   EyeOff,
+  ShieldCheck,
+  Shield,
+  User as UserIcon,
+  Ban,
   LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -125,6 +129,44 @@ const STATUS_CONFIGS: Record<string, StatusConfig> = {
   hidden: {
     label: 'Hidden',
     icon: EyeOff,
+    variant: 'secondary',
+    classes: 'border-border bg-surface-elevated text-muted-foreground',
+  },
+
+  // User and account statuses
+  admin: {
+    label: 'Admin',
+    icon: ShieldCheck,
+    variant: 'accent',
+    classes: 'border-accent/40 bg-accent/15 text-accent font-semibold',
+  },
+  moderator: {
+    label: 'Moderator',
+    icon: Shield,
+    variant: 'info',
+    classes: 'border-status-info/30 bg-status-info/10 text-status-info font-medium',
+  },
+  user: {
+    label: 'Citizen',
+    icon: UserIcon,
+    variant: 'secondary',
+    classes: 'border-border bg-surface-elevated text-muted-foreground',
+  },
+  suspended: {
+    label: 'Suspended',
+    icon: Ban,
+    variant: 'danger',
+    classes: 'border-status-danger/40 bg-status-danger/10 text-status-danger font-semibold',
+  },
+  verified: {
+    label: 'Verified',
+    icon: CheckCircle2,
+    variant: 'success',
+    classes: 'border-status-success/30 bg-status-success/10 text-status-success',
+  },
+  unverified: {
+    label: 'Unverified',
+    icon: Clock,
     variant: 'secondary',
     classes: 'border-border bg-surface-elevated text-muted-foreground',
   },

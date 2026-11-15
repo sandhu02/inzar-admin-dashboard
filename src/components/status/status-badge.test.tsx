@@ -33,4 +33,24 @@ describe('StatusBadge', () => {
     render(<StatusBadge status="removed" />);
     expect(screen.getByText('Removed')).toBeInTheDocument();
   });
+
+  it('renders "Admin" user status correctly', () => {
+    render(<StatusBadge status="admin" />);
+    expect(screen.getByText('Admin')).toBeInTheDocument();
+  });
+
+  it('renders "Moderator" user status correctly', () => {
+    render(<StatusBadge status="moderator" />);
+    expect(screen.getByText('Moderator')).toBeInTheDocument();
+  });
+
+  it('renders "Suspended" account status correctly', () => {
+    render(<StatusBadge status="suspended" />);
+    expect(screen.getByText('Suspended')).toBeInTheDocument();
+  });
+
+  it('renders "Verified" account status correctly', () => {
+    render(<StatusBadge status="verified" />);
+    expect(screen.getByText('Verified')).toBeInTheDocument();
+  });
 });

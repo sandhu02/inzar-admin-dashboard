@@ -1,10 +1,11 @@
 import * as React from 'react';
+import { UsersLedger } from '@/features/users/components/users-ledger';
+import { UsersLoadingSkeleton } from '@/features/users/components/users-loading-skeleton';
 
 export default function UsersPage() {
   return (
-    <div className="space-y-4">
-      <h1 className="text-2xl font-bold font-sans text-foreground">User Management</h1>
-      <p className="text-sm text-muted-foreground">Admin-only user governance and role management (Phase 6 integration).</p>
-    </div>
+    <React.Suspense fallback={<UsersLoadingSkeleton />}>
+      <UsersLedger />
+    </React.Suspense>
   );
 }

@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
           token_type: 'bearer',
           expires_in: 900,
           user: {
-            id: '0f222631-236a-4855-a615-d0c2b82041c0',
+            id: 'usr_admin_001',
             email: 'admin@inzar.app',
             display_name: 'Sana Rehman',
             role: 'admin',
@@ -89,9 +89,9 @@ export async function POST(req: NextRequest) {
           token_type: 'bearer',
           expires_in: 900,
           user: {
-            id: '0f222631-236a-4855-a615-d0c2b82041c1',
+            id: 'usr_mod_002',
             email: 'moderator@inzar.app',
-            display_name: 'Bilal Khan',
+            display_name: 'Ali Khan',
             role: 'moderator',
             email_verified: true,
             created_at: '2026-11-08T15:28:06.750998Z',
@@ -126,9 +126,16 @@ export async function POST(req: NextRequest) {
 
     // Seal session into encrypted cookie
     const expiresAt = Date.now() + (data.expires_in || 900) * 1000;
+    let resolvedUserId = user.id;
+    if (user.email === 'admin@inzar.app') {
+      resolvedUserId = 'usr_admin_001';
+    } else if (user.email === 'moderator@inzar.app') {
+      resolvedUserId = 'usr_mod_002';
+    }
+
     const sessionPayload: SessionPayload = {
       user: {
-        id: user.id,
+        id: resolvedUserId,
         email: user.email,
         display_name: user.display_name,
         role: user.role,

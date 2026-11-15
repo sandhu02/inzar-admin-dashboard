@@ -1,9 +1,29 @@
 import { http, HttpResponse } from 'msw';
 import { mockUsers, mockCategories } from './fixtures';
 import { mockIncidentsDataset, queryMockIncidents } from './incidents-data';
+import {
+  queryMockUsers,
+  getMockUserDetail,
+  getMockUserIncidents,
+  updateMockUserSuspension,
+  updateMockUserRole,
+  revokeMockUserSessions,
+  resetMockUsers,
+} from './users-data';
 import { enrichIncidentDetail } from '../features/incidents/api/mock-detail';
 
-export { mockUsers, mockCategories, queryMockIncidents };
+export {
+  mockUsers,
+  mockCategories,
+  queryMockIncidents,
+  queryMockUsers,
+  getMockUserDetail,
+  getMockUserIncidents,
+  updateMockUserSuspension,
+  updateMockUserRole,
+  revokeMockUserSessions,
+  resetMockUsers,
+};
 
 export const flagsStatusOverrides = new Map<string, string>();
 
@@ -711,6 +731,194 @@ export const handlers = [
         notes: body.notes,
         updated_at: new Date().toISOString(),
       });
+    }
+  ),
+
+  // Users list
+  http.get(/.*\/admin\/users(\?|$)/, ({ request }) => {
+    const authHeader = request.headers.get('Authorization') || '';
+    if (!authHeader.startsWith('Bearer ')) {
+      return HttpResponse.json(
+        { error: { code: 'UNAUTHORIZED', message: 'Authentication required' } },
+        { status: 401 }
+      );
+    }
+
+    const url = new URL(request.url);
+    const viewerRole = authHeader.includes('mod') ? 'moderator' : 'admin';
+    const result = queryMockUsers(url.searchParams, viewerRole);
+    return HttpResponse.json(result);
+  }),
+
+  // User incidents
+  http.get(
+    /.*\/admin\/users\/([a-zA-Z0-9_-]+)\/incidents(\?|$)/,
+    ({ params }) => {
+      const userId = params[0] as string;
+      const incidents = getMockUserIncidents(userId);
+      return HttpResponse.json({
+        items: incidents,
+        total_count: incidents.length,
+        next_cursor: null,
+      });
+    }
+  ),
+
+  // Revoke user sessions
+  http.post(
+    /.*\/admin\/users\/([a-zA-Z0-9_-]+)\/revoke-sessions(\?|$)/,
+    async ({ request, params }) => {
+      const authHeader = request.headers.get('Authorization') || '';
+      if (!authHeader.startsWith('Bearer ')) {
+        return HttpResponse.json(
+          { error: { code: 'UNAUTHORIZED', message: 'Authentication required' } },
+          { status: 401 }
+        );
+      }
+
+      const userId = params[0] as string;
+      const body = (await request.json().catch(() => ({}))) as { reason?: string };
+      const actor = authHeader.includes('mod') ? 'Ali Khan (Moderator)' : 'Sana Rehman (Admin)';
+
+      const result = revokeMockUserSessions(userId, body.reason, actor);
+      if (result.error) {
+        return HttpResponse.json({ error: result.error }, { status: 404 });
+      }
+
+      return HttpResponse.json({
+        success: true,
+        revoked_count: result.revoked_count,
+        revoked_at: new Date().toISOString(),
+      });
+    }
+  ),
+
+  // Single user detail
+  http.get(
+    /.*\/admin\/users\/([a-zA-Z0-9_-]+)(\?|$)/,
+    ({ request, params }) => {
+      const authHeader = request.headers.get('Authorization') || '';
+      if (!authHeader.startsWith('Bearer ')) {
+        return HttpResponse.json(
+          { error: { code: 'UNAUTHORIZED', message: 'Authentication required' } },
+          { status: 401 }
+        );
+      }
+
+      const userId = params[0] as string;
+      const viewerRole = authHeader.includes('mod') ? 'moderator' : 'admin';
+      const user = getMockUserDetail(userId, viewerRole);
+
+      if (!user) {
+        return HttpResponse.json(
+          { error: { code: 'USER_NOT_FOUND', message: `User ${userId} not found.` } },
+          { status: 404 }
+        );
+      }
+
+      return HttpResponse.json(user);
+    }
+  ),
+
+  // Update user (suspend, role)
+  http.patch(
+    /.*\/admin\/users\/([a-zA-Z0-9_-]+)(\?|$)/,
+    async ({ request, params }) => {
+      const authHeader = request.headers.get('Authorization') || '';
+      if (!authHeader.startsWith('Bearer ')) {
+        return HttpResponse.json(
+          { error: { code: 'UNAUTHORIZED', message: 'Authentication required' } },
+          { status: 401 }
+        );
+      }
+
+      const userId = params[0] as string;
+      const isMod = authHeader.includes('mod');
+      const currentUserId = isMod ? 'usr_mod_002' : 'usr_admin_001';
+      const actor = isMod ? 'Ali Khan (Moderator)' : 'Sana Rehman (Admin)';
+
+      const body = (await request.json().catch(() => ({}))) as {
+        is_suspended?: boolean;
+        reason?: string;
+        notes?: string;
+        role?: 'admin' | 'moderator' | 'user';
+      };
+
+      // 1. Role modification
+      if (body.role !== undefined) {
+        if (isMod) {
+          return HttpResponse.json(
+            {
+              error: {
+                code: 'FORBIDDEN',
+                message: 'Only administrators can modify user roles.',
+              },
+            },
+            { status: 403 }
+          );
+        }
+
+        const roleResult = updateMockUserRole(userId, body.role, body.reason || '', actor);
+        if (roleResult.error) {
+          return HttpResponse.json(
+            { error: roleResult.error },
+            { status: roleResult.error.code === 'LAST_ADMIN_GUARD' ? 409 : 400 }
+          );
+        }
+
+        if (userId === currentUserId) {
+          return HttpResponse.json(
+            {
+              error: {
+                code: 'CANNOT_MODIFY_SELF',
+                message: 'You cannot change your own role.',
+              },
+            },
+            { status: 400 }
+          );
+        }
+      }
+
+      // 2. Suspension modification
+      if (body.is_suspended !== undefined) {
+        if (userId === currentUserId) {
+          return HttpResponse.json(
+            {
+              error: {
+                code: 'CANNOT_MODIFY_SELF',
+                message: 'You cannot suspend your own account.',
+              },
+            },
+            { status: 400 }
+          );
+        }
+
+        if (body.is_suspended && !body.reason?.trim()) {
+          return HttpResponse.json(
+            {
+              error: {
+                code: 'REASON_REQUIRED',
+                message: 'A justification reason is required to suspend an account.',
+              },
+            },
+            { status: 400 }
+          );
+        }
+
+        const suspResult = updateMockUserSuspension(
+          userId,
+          body.is_suspended,
+          body.reason || (body.is_suspended ? 'Suspended by staff' : 'Unsuspended by staff'),
+          actor
+        );
+
+        if (suspResult.error) {
+          return HttpResponse.json({ error: suspResult.error }, { status: 400 });
+        }
+      }
+
+      const updated = getMockUserDetail(userId, isMod ? 'moderator' : 'admin');
+      return HttpResponse.json(updated);
     }
   ),
 ];

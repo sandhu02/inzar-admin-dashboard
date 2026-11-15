@@ -11,6 +11,14 @@ import {
 import { refreshSingleFlight } from '@/lib/auth/refresh';
 import { enrichIncidentDetail } from '@/features/incidents/api/mock-detail';
 import { mockIncidentsDataset, queryMockIncidents } from '@/mocks/incidents-data';
+import {
+  queryMockUsers,
+  getMockUserDetail,
+  getMockUserIncidents,
+  updateMockUserSuspension,
+  updateMockUserRole,
+  revokeMockUserSessions,
+} from '@/mocks/users-data';
 import type { Incident, IncidentDetail } from '@/features/incidents/types';
 
 type RouteContext = {
@@ -361,7 +369,7 @@ async function handleProxy(req: NextRequest, { params }: RouteContext) {
   if (!session || !session.accessToken) {
     session = {
       user: {
-        id: '0f222631-236a-4855-a615-d0c2b82041c0',
+        id: 'usr_admin_001',
         email: 'admin@inzar.app',
         display_name: 'Sana Rehman',
         role: 'admin',
@@ -405,7 +413,219 @@ async function handleProxy(req: NextRequest, { params }: RouteContext) {
     }
   }
 
-  // 3. Special Handling: Moderation Queue, Community Flags, and Incident Actions
+  // 3. Special Handling: Users, Moderation Queue, Community Flags, and Incident Actions
+  // GET /admin/users
+  if (pathString === 'admin/users' && method === 'GET') {
+    const viewerRole = session.user.role || 'moderator';
+
+    if (!session.accessToken.startsWith('mock_')) {
+      try {
+        const backendRes = await fetch(`${env.API_BASE_URL}/admin/users${search}`, {
+          headers: {
+            Authorization: `Bearer ${session.accessToken}`,
+            Accept: 'application/json',
+            'X-Tunnel-Skip-AntiPhishing-Page': 'true',
+            'bypass-tunnel-reminder': 'true',
+          },
+          signal: AbortSignal.timeout(1500),
+        });
+        if (backendRes.ok) {
+          const ct = backendRes.headers.get('content-type') || '';
+          if (ct.includes('application/json')) {
+            const data = await backendRes.json();
+            if (data && Array.isArray(data.items)) {
+              if (viewerRole !== 'admin') {
+                // Redact email for non-admin viewers
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                data.items = data.items.map((it: any) => ({ ...it, email: null }));
+              }
+              return NextResponse.json(data);
+            }
+          }
+        }
+      } catch {
+        // Fallback to mock dataset
+      }
+    }
+
+    const mockResult = queryMockUsers(req.nextUrl.searchParams, viewerRole);
+    return NextResponse.json(mockResult);
+  }
+
+  // GET /admin/users/:id/incidents
+  if (
+    path.length === 4 &&
+    path[0] === 'admin' &&
+    path[1] === 'users' &&
+    path[3] === 'incidents' &&
+    method === 'GET'
+  ) {
+    const userId = path[2]!;
+    const incidents = getMockUserIncidents(userId);
+    return NextResponse.json({
+      items: incidents,
+      total_count: incidents.length,
+      next_cursor: null,
+    });
+  }
+
+  // POST /admin/users/:id/revoke-sessions
+  if (
+    path.length === 4 &&
+    path[0] === 'admin' &&
+    path[1] === 'users' &&
+    path[3] === 'revoke-sessions' &&
+    method === 'POST'
+  ) {
+    const userId = path[2]!;
+    const body = (await req.json().catch(() => ({}))) as { reason?: string };
+    const actor = session.user.display_name || session.user.email;
+    const result = revokeMockUserSessions(userId, body.reason, `${actor} (${session.user.role})`);
+
+    if (result.error) {
+      return NextResponse.json({ error: result.error }, { status: 404 });
+    }
+
+    return NextResponse.json({
+      success: true,
+      revoked_count: result.revoked_count,
+      revoked_at: new Date().toISOString(),
+    });
+  }
+
+  // GET /admin/users/:id
+  if (path.length === 3 && path[0] === 'admin' && path[1] === 'users' && method === 'GET') {
+    const userId = path[2]!;
+    const viewerRole = session.user.role || 'moderator';
+
+    if (!session.accessToken.startsWith('mock_')) {
+      try {
+        const backendRes = await fetch(`${env.API_BASE_URL}/admin/users/${userId}`, {
+          headers: {
+            Authorization: `Bearer ${session.accessToken}`,
+            Accept: 'application/json',
+            'X-Tunnel-Skip-AntiPhishing-Page': 'true',
+            'bypass-tunnel-reminder': 'true',
+          },
+          signal: AbortSignal.timeout(1500),
+        });
+        if (backendRes.ok) {
+          const ct = backendRes.headers.get('content-type') || '';
+          if (ct.includes('application/json')) {
+            const data = await backendRes.json();
+            if (data && data.id) {
+              if (viewerRole !== 'admin') {
+                data.email = null;
+              }
+              return NextResponse.json(data);
+            }
+          }
+        }
+      } catch {
+        // Fallback to mock
+      }
+    }
+
+    const user = getMockUserDetail(userId, viewerRole);
+    if (!user) {
+      return NextResponse.json(
+        { error: { code: 'USER_NOT_FOUND', message: `User ${userId} not found.` } },
+        { status: 404 }
+      );
+    }
+    return NextResponse.json(user);
+  }
+
+  // PATCH /admin/users/:id
+  if (path.length === 3 && path[0] === 'admin' && path[1] === 'users' && method === 'PATCH') {
+    const userId = path[2]!;
+    const isMod = session.user.role === 'moderator';
+    const actor = `${session.user.display_name || session.user.email} (${session.user.role})`;
+
+    const body = (await req.json().catch(() => ({}))) as {
+      is_suspended?: boolean;
+      reason?: string;
+      notes?: string;
+      role?: 'admin' | 'moderator' | 'user';
+    };
+
+    // 1. Role modification (admin only)
+    if (body.role !== undefined) {
+      if (isMod) {
+        return NextResponse.json(
+          {
+            error: {
+              code: 'FORBIDDEN',
+              message: 'Only administrators can modify user roles.',
+            },
+          },
+          { status: 403 }
+        );
+      }
+
+      const roleResult = updateMockUserRole(userId, body.role, body.reason || '', actor);
+      if (roleResult.error) {
+        return NextResponse.json(
+          { error: roleResult.error },
+          { status: roleResult.error.code === 'LAST_ADMIN_GUARD' ? 409 : 400 }
+        );
+      }
+
+      if (userId === session.user.id) {
+        return NextResponse.json(
+          {
+            error: {
+              code: 'CANNOT_MODIFY_SELF',
+              message: 'You cannot change your own role.',
+            },
+          },
+          { status: 400 }
+        );
+      }
+    }
+
+    // 2. Suspension modification
+    if (body.is_suspended !== undefined) {
+      if (userId === session.user.id) {
+        return NextResponse.json(
+          {
+            error: {
+              code: 'CANNOT_MODIFY_SELF',
+              message: 'You cannot suspend your own account.',
+            },
+          },
+          { status: 400 }
+        );
+      }
+
+      if (body.is_suspended && !body.reason?.trim()) {
+        return NextResponse.json(
+          {
+            error: {
+              code: 'REASON_REQUIRED',
+              message: 'A justification reason is required to suspend an account.',
+            },
+          },
+          { status: 400 }
+        );
+      }
+
+      const suspResult = updateMockUserSuspension(
+        userId,
+        body.is_suspended,
+        body.reason || (body.is_suspended ? 'Suspended by staff' : 'Unsuspended by staff'),
+        actor
+      );
+
+      if (suspResult.error) {
+        return NextResponse.json({ error: suspResult.error }, { status: 400 });
+      }
+    }
+
+    const updated = getMockUserDetail(userId, session.user.role || 'moderator');
+    return NextResponse.json(updated);
+  }
+
   // GET /admin/moderation/queue
   if (pathString === 'admin/moderation/queue' && method === 'GET') {
     // Attempt forwarding to real backend

@@ -89,15 +89,124 @@ Until backend updates are published, these contracts are implemented via MSW han
 
 ---
 
-## 2. User Moderation Extensions
+## 2. User Moderation and Governance Extensions
+
+### `GET /admin/users`
+- **Method**: GET
+- **Description**: Returns paginated list of user accounts with search, role, status, verification, and date range filters.
+- **Query Parameters**:
+  - `q`: string (search in `display_name` and `email`)
+  - `role`: string (`admin`, `moderator`, `user`)
+  - `status`: string (`active`, `suspended`)
+  - `verified`: string (`verified`, `unverified`)
+  - `date_preset`: string (`today`, `24h`, `7d`, `30d`, `custom`)
+  - `created_from`: ISO 8601 timestamp
+  - `created_to`: ISO 8601 timestamp
+  - `sort`: string (`created_at:desc`, `created_at:asc`, `display_name:asc`, `display_name:desc`, `reports_count:desc`, `reports_count:asc`)
+  - `cursor`: string / offset
+  - `limit`: integer (default 25)
+- **Response Shape**:
+  ```json
+  {
+    "items": [
+      {
+        "id": "usr_...",
+        "display_name": "Hamza Malik",
+        "email": "hamza.malik@example.com",
+        "role": "user",
+        "is_suspended": false,
+        "is_verified": true,
+        "reports_count": 16,
+        "flags_count": 3,
+        "created_at": "2026-02-14T10:00:00Z",
+        "last_active_at": "2026-11-15T08:30:00Z",
+        "suspension_reason": null,
+        "suspended_at": null,
+        "suspended_by": null
+      }
+    ],
+    "total_count": 20,
+    "next_cursor": "25"
+  }
+  ```
+- **Privacy Rule**: Email addresses are strictly redacted (`email = null`) when requested by non-administrator roles (`moderator`).
 
 ### `GET /admin/users/{id}`
-- **Detail response**: includes incident counts by status, flags received, session list, moderation penalties.
+- **Method**: GET
+- **Description**: Returns full user profile, numerical metrics, session list, and moderation audit history.
+- **Response Shape**:
+  ```json
+  {
+    "id": "usr_...",
+    "display_name": "Hamza Malik",
+    "email": "hamza.malik@example.com",
+    "role": "user",
+    "is_suspended": false,
+    "is_verified": true,
+    "reports_count": 16,
+    "flags_count": 3,
+    "created_at": "2026-02-14T10:00:00Z",
+    "last_active_at": "2026-11-15T08:30:00Z",
+    "stats": {
+      "total_reports": 16,
+      "published_reports": 11,
+      "under_review_reports": 2,
+      "rejected_reports": 2,
+      "false_reports": 1,
+      "removed_reports": 0,
+      "flags_received": 3
+    },
+    "sessions": [
+      {
+        "id": "sess_1",
+        "device": "Inzar Mobile App (Android 14)",
+        "ip_address": "182.185.120.12",
+        "created_at": "2026-11-10T14:22:00Z",
+        "last_seen_at": "2026-11-15T08:30:00Z",
+        "is_current": false
+      }
+    ],
+    "moderation_history": [
+      {
+        "id": "mod_1",
+        "action": "false_report_penalty",
+        "reason": "Submitted staged photo as emergency fire incident",
+        "actor": "Sana Rehman (Admin)",
+        "created_at": "2026-10-04T11:15:00Z"
+      }
+    ]
+  }
+  ```
+- **Privacy Rule**: `email` is redacted (`null`) for moderator viewers.
+
+### `GET /admin/users/{id}/incidents`
+- **Method**: GET
+- **Description**: Returns paginated list of incidents submitted by the specified user.
+- **Privacy Rule**: Accessing reported incidents respects fuzzed location and masked reporter identity rules.
+
+### `PATCH /admin/users/{id}`
+- **Method**: PATCH
+- **Description**: Modifies user suspension status or alters staff access role.
+- **Body**:
+  ```json
+  {
+    "is_suspended": true,
+    "reason": "Repeated submission of spam and fake incident reports",
+    "notes": "Internal audit ticket #9421",
+    "role": "moderator"
+  }
+  ```
+- **Business & Security Rules**:
+  1. **Reason Required**: When suspending an account (`is_suspended: true`), `reason` is strictly mandatory.
+  2. **Self-Protection Guard**: A staff member cannot suspend their own account or modify/demote their own role (`CANNOT_MODIFY_SELF`).
+  3. **Last-Admin Guard**: If the target user is an administrator and only one administrator exists in the system, demotion to non-admin is rejected (`LAST_ADMIN_GUARD` / HTTP 409).
+  4. **Admin-Only Role Modification**: Only users with the `admin` role may alter roles. Requests by `moderator` return HTTP 403 `FORBIDDEN`.
 
 ### `POST /admin/users/{id}/revoke-sessions`
 - **Method**: POST
-- **Body**: `{}`
-- **Behavior**: Revokes all active refresh tokens for the specified user.
+- **Description**: Immediately revokes all active refresh tokens and sessions for the specified user, forcing re-authentication.
+- **Body**: `{ "reason": "Administrative security revocation" }`
+- **Audit**: Writes audit log entry.
 
 ---
 
