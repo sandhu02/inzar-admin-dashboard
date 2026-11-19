@@ -6,9 +6,48 @@ import {
   Droplets,
   Users,
   HelpCircle,
+  Activity,
+  Zap,
+  Wind,
+  Car,
+  Truck,
+  Construction,
+  Radiation,
+  Bell,
+  Siren,
+  Shield,
+  Mountain,
+  Camera,
+  Eye,
+  Radio,
+  Megaphone,
   LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+
+export const CATEGORY_ICON_REGISTRY: Record<string, LucideIcon> = {
+  flame: Flame,
+  'alert-triangle': AlertTriangle,
+  'shield-alert': ShieldAlert,
+  droplets: Droplets,
+  users: Users,
+  'help-circle': HelpCircle,
+  activity: Activity,
+  zap: Zap,
+  wind: Wind,
+  car: Car,
+  truck: Truck,
+  construction: Construction,
+  radiation: Radiation,
+  bell: Bell,
+  siren: Siren,
+  shield: Shield,
+  mountain: Mountain,
+  camera: Camera,
+  eye: Eye,
+  radio: Radio,
+  megaphone: Megaphone,
+};
 
 export interface CategoryInfo {
   id?: string;
@@ -117,7 +156,12 @@ export function CategoryChip({
       ? category.color_hex
       : config.defaultColor;
 
-  const Icon = config.icon;
+  const customIcon =
+    typeof category !== 'string' && category.icon_key
+      ? CATEGORY_ICON_REGISTRY[category.icon_key]
+      : undefined;
+
+  const Icon = customIcon || config.icon;
 
   return (
     <span

@@ -388,3 +388,85 @@ Until backend updates are published, these contracts are implemented via MSW han
 - **Body**: `{ "status": "pending" | "reviewed" | "dismissed", "notes": "string (optional)" }`
 - **Audit**: Writes audit log entry.
 
+---
+
+## 6. Category Taxonomy and Platform Settings Extensions
+
+### `POST /admin/categories`
+- **Method**: POST
+- **Description**: Creates a new incident classification category with retention timers, urgency, and moderation rules.
+- **Permission**: `admin` only (moderator returns HTTP 403 `FORBIDDEN`).
+- **Body**:
+  ```json
+  {
+    "slug": "landslide",
+    "name": "Landslide",
+    "icon_key": "mountain",
+    "color_hex": "#FF6B2C",
+    "is_active": true,
+    "sort_order": 7,
+    "urgency": "high",
+    "default_ttl_minutes": 300,
+    "stale_after_minutes": 100,
+    "resolve_flag_threshold": 3,
+    "notify_throttle_minutes": 15,
+    "notify_by_default": true,
+    "require_manual_review": false,
+    "safety_note": "Watch for falling rocks and road instability."
+  }
+  ```
+- **Validation**:
+  1. `slug` must be unique across all categories (`SLUG_CONFLICT` / HTTP 409).
+  2. `stale_after_minutes` must be strictly less than `default_ttl_minutes`.
+  3. `color_hex` must match valid `#RGB` or `#RRGGBB` format.
+  4. Numeric values must be positive integers.
+
+### `PATCH /admin/categories/{id}`
+- **Method**: PATCH
+- **Description**: Modifies category properties or toggles active status. Slug is immutable and cannot be altered after creation.
+- **Permission**: `admin` only.
+- **Deactivation Rule**: Categories in use cannot be permanently deleted to preserve historic incident audit integrity; deactivating sets `is_active: false`.
+
+### `PUT /admin/categories/reorder`
+- **Method**: PUT
+- **Description**: Updates the display order sequence of categories.
+- **Permission**: `admin` only.
+- **Body**:
+  ```json
+  {
+    "items": [
+      { "id": "cat_fire", "sort_order": 1 },
+      { "id": "cat_accident", "sort_order": 2 }
+    ]
+  }
+  ```
+
+### `GET /admin/settings`
+- **Method**: GET
+- **Description**: Fetches global platform runtime settings including intake review mode, spatial boundaries, and rate limits.
+- **Permission**: `admin` only.
+- **Response Shape**:
+  ```json
+  {
+    "max_search_radius_km": 50,
+    "allowed_radius_options_km": [1, 5, 10, 25, 50],
+    "fuzz_distance_m": 250,
+    "max_reports_per_user_per_hour": 5,
+    "max_description_length": 500,
+    "review_mode": "manual",
+    "abuse_flag_hide_threshold": 5,
+    "alert_digest_threshold": 3,
+    "alert_digest_window_minutes": 30,
+    "min_account_age_minutes_to_report": 15,
+    "updated_at": "2026-11-15T10:00:00Z",
+    "updated_by": "Sana Rehman (Admin)"
+  }
+  ```
+
+### `PATCH /admin/settings`
+- **Method**: PATCH
+- **Description**: Updates global platform configuration settings.
+- **Permission**: `admin` only.
+- **Audit**: Writes audit log entry recording actor and modified settings before/after values.
+
+

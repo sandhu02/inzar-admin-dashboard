@@ -19,6 +19,16 @@ import {
   updateMockUserRole,
   revokeMockUserSessions,
 } from '@/mocks/users-data';
+import {
+  getMockCategories,
+  createMockCategory,
+  updateMockCategory,
+  reorderMockCategories,
+} from '@/mocks/categories-data';
+import {
+  getMockSettings,
+  updateMockSettings,
+} from '@/mocks/settings-data';
 import type { Incident, IncidentDetail } from '@/features/incidents/types';
 
 type RouteContext = {
@@ -413,7 +423,148 @@ async function handleProxy(req: NextRequest, { params }: RouteContext) {
     }
   }
 
-  // 3. Special Handling: Users, Moderation Queue, Community Flags, and Incident Actions
+  // 3. Special Handling: Categories, Settings, Users, Moderation Queue, Community Flags, and Incident Actions
+  // Categories reorder: PUT /admin/categories/reorder
+  if (
+    pathString === 'admin/categories/reorder' &&
+    (method === 'PUT' || method === 'PATCH')
+  ) {
+    if (session.user.role !== 'admin') {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'FORBIDDEN',
+            message: 'Only administrators can reorder categories.',
+          },
+        },
+        { status: 403 }
+      );
+    }
+    const body = (await req.json().catch(() => ({}))) as {
+      items?: { id: string; sort_order: number }[];
+    };
+    if (!body.items || !Array.isArray(body.items)) {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'INVALID_REQUEST',
+            message: 'Missing items array for reorder.',
+          },
+        },
+        { status: 400 }
+      );
+    }
+    const updated = reorderMockCategories(body.items);
+    return NextResponse.json(updated);
+  }
+
+  // Categories list / create: /admin/categories
+  if (pathString === 'admin/categories') {
+    if (method === 'GET') {
+      if (!session.accessToken.startsWith('mock_')) {
+        try {
+          const backendRes = await fetch(`${env.API_BASE_URL}/admin/categories`, {
+            headers: {
+              Authorization: `Bearer ${session.accessToken}`,
+              Accept: 'application/json',
+              'X-Tunnel-Skip-AntiPhishing-Page': 'true',
+              'bypass-tunnel-reminder': 'true',
+            },
+            signal: AbortSignal.timeout(1500),
+          });
+          if (backendRes.ok) {
+            const data = await backendRes.json();
+            if (Array.isArray(data) && data.length > 0) {
+              return NextResponse.json(data);
+            }
+          }
+        } catch {
+          // Fallback to mock
+        }
+      }
+      return NextResponse.json(getMockCategories());
+    }
+
+    if (method === 'POST') {
+      if (session.user.role !== 'admin') {
+        return NextResponse.json(
+          {
+            error: {
+              code: 'FORBIDDEN',
+              message: 'Only administrators can create categories.',
+            },
+          },
+          { status: 403 }
+        );
+      }
+      const body = await req.json().catch(() => ({}));
+      const result = createMockCategory(body);
+      if (result.error) {
+        return NextResponse.json(
+          { error: result.error },
+          { status: result.error.code === 'SLUG_CONFLICT' ? 409 : 400 }
+        );
+      }
+      return NextResponse.json(result.category, { status: 201 });
+    }
+  }
+
+  // Update Category: PATCH /admin/categories/:id
+  if (
+    path.length === 3 &&
+    path[0] === 'admin' &&
+    path[1] === 'categories' &&
+    method === 'PATCH'
+  ) {
+    if (session.user.role !== 'admin') {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'FORBIDDEN',
+            message: 'Only administrators can modify categories.',
+          },
+        },
+        { status: 403 }
+      );
+    }
+    const categoryId = path[2]!;
+    const body = await req.json().catch(() => ({}));
+    const result = updateMockCategory(categoryId, body);
+    if (result.error) {
+      return NextResponse.json(
+        { error: result.error },
+        { status: result.error.code === 'NOT_FOUND' ? 404 : 400 }
+      );
+    }
+    return NextResponse.json(result.category);
+  }
+
+  // Global Settings: /admin/settings (GET, PATCH)
+  if (pathString === 'admin/settings') {
+    if (session.user.role !== 'admin') {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'FORBIDDEN',
+            message: 'Only administrators can access global settings.',
+          },
+        },
+        { status: 403 }
+      );
+    }
+
+    if (method === 'GET') {
+      return NextResponse.json(getMockSettings());
+    }
+
+    if (method === 'PATCH' || method === 'PUT') {
+      const body = await req.json().catch(() => ({}));
+      const actor = `${session.user.display_name || session.user.email} (${session.user.role})`;
+      const updated = updateMockSettings(body, actor);
+      return NextResponse.json(updated);
+    }
+  }
+
   // GET /admin/users
   if (pathString === 'admin/users' && method === 'GET') {
     const viewerRole = session.user.role || 'moderator';

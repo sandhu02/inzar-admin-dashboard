@@ -10,6 +10,20 @@ import {
   revokeMockUserSessions,
   resetMockUsers,
 } from './users-data';
+import {
+  getMockCategories,
+  getMockCategory,
+  createMockCategory,
+  updateMockCategory,
+  reorderMockCategories,
+  resetMockCategories,
+} from './categories-data';
+import {
+  getMockSettings,
+  updateMockSettings,
+  resetMockSettingsToDefaults,
+  resetMockSettings,
+} from './settings-data';
 import { enrichIncidentDetail } from '../features/incidents/api/mock-detail';
 
 export {
@@ -23,6 +37,16 @@ export {
   updateMockUserRole,
   revokeMockUserSessions,
   resetMockUsers,
+  getMockCategories,
+  getMockCategory,
+  createMockCategory,
+  updateMockCategory,
+  reorderMockCategories,
+  resetMockCategories,
+  getMockSettings,
+  updateMockSettings,
+  resetMockSettingsToDefaults,
+  resetMockSettings,
 };
 
 export const flagsStatusOverrides = new Map<string, string>();
@@ -135,7 +159,101 @@ export const handlers = [
 
   // Categories list
   http.get(/.*\/admin\/categories(\?|$)/, () => {
-    return HttpResponse.json(mockCategories);
+    return HttpResponse.json(getMockCategories());
+  }),
+
+  // Categories reorder (PUT /admin/categories/reorder)
+  http.put(/.*\/admin\/categories\/reorder(\?|$)/, async ({ request }) => {
+    const authHeader = request.headers.get('Authorization') || '';
+    if (authHeader.includes('mod')) {
+      return HttpResponse.json(
+        { error: { code: 'FORBIDDEN', message: 'Only administrators can reorder categories.' } },
+        { status: 403 }
+      );
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const body = (await request.json().catch(() => ({}))) as any;
+    if (!body.items || !Array.isArray(body.items)) {
+      return HttpResponse.json(
+        { error: { code: 'INVALID_REQUEST', message: 'Missing items array for reorder.' } },
+        { status: 400 }
+      );
+    }
+    const updated = reorderMockCategories(body.items);
+    return HttpResponse.json(updated);
+  }),
+
+  // Create Category (POST /admin/categories)
+  http.post(/.*\/admin\/categories(\?|$)/, async ({ request }) => {
+    const authHeader = request.headers.get('Authorization') || '';
+    if (authHeader.includes('mod')) {
+      return HttpResponse.json(
+        { error: { code: 'FORBIDDEN', message: 'Only administrators can create categories.' } },
+        { status: 403 }
+      );
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const body = (await request.json().catch(() => ({}))) as any;
+    const result = createMockCategory(body);
+    if (result.error) {
+      return HttpResponse.json(
+        { error: result.error },
+        { status: result.error.code === 'SLUG_CONFLICT' ? 409 : 400 }
+      );
+    }
+    return HttpResponse.json(result.category, { status: 201 });
+  }),
+
+  // Update Category (PATCH /admin/categories/:id)
+  http.patch(/.*\/admin\/categories\/([^/?]+)(\?|$)/, async ({ params, request }) => {
+    const authHeader = request.headers.get('Authorization') || '';
+    if (authHeader.includes('mod')) {
+      return HttpResponse.json(
+        { error: { code: 'FORBIDDEN', message: 'Only administrators can modify categories.' } },
+        { status: 403 }
+      );
+    }
+    const id = params[0] as string;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const body = (await request.json().catch(() => ({}))) as any;
+    const result = updateMockCategory(id, body);
+    if (result.error) {
+      return HttpResponse.json(
+        { error: result.error },
+        { status: result.error.code === 'NOT_FOUND' ? 404 : 400 }
+      );
+    }
+    return HttpResponse.json(result.category);
+  }),
+
+  // Global Settings GET (/admin/settings)
+  http.get(/.*\/admin\/settings(\?|$)/, ({ request }) => {
+    const authHeader = request.headers.get('Authorization') || '';
+    if (authHeader.includes('mod')) {
+      return HttpResponse.json(
+        { error: { code: 'FORBIDDEN', message: 'Only administrators can access settings.' } },
+        { status: 403 }
+      );
+    }
+    return HttpResponse.json(getMockSettings());
+  }),
+
+  // Global Settings PATCH (/admin/settings)
+  http.patch(/.*\/admin\/settings(\?|$)/, async ({ request }) => {
+    const authHeader = request.headers.get('Authorization') || '';
+    if (authHeader.includes('mod')) {
+      return HttpResponse.json(
+        { error: { code: 'FORBIDDEN', message: 'Only administrators can modify settings.' } },
+        { status: 403 }
+      );
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const body = (await request.json().catch(() => ({}))) as any;
+    const actor = authHeader.includes('admin')
+      ? 'Sana Rehman (Admin)'
+      : 'System Administrator';
+    const updated = updateMockSettings(body, actor);
+    return HttpResponse.json(updated);
   }),
 
   // Overview stats

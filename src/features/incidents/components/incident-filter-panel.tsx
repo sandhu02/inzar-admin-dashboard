@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { CategoryChip } from '@/components/status/category-chip';
+import { useCategories } from '@/features/categories/hooks/use-categories';
 import { DEFAULT_CATEGORIES } from '../constants/categories';
 import { IncidentLocationFilter } from './incident-location-filter';
 import type { IncidentFilterValues } from '../types';
@@ -119,6 +120,12 @@ function FilterFormContent({
     });
   };
 
+  const { data: apiCategories } = useCategories();
+  const availableCategories =
+    apiCategories && apiCategories.length > 0
+      ? apiCategories
+      : DEFAULT_CATEGORIES;
+
   return (
     <>
       <DialogHeader className="pb-3 border-b border-border">
@@ -195,7 +202,7 @@ function FilterFormContent({
             Categories
           </label>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            {DEFAULT_CATEGORIES.map((cat) => {
+            {availableCategories.map((cat) => {
               const checked =
                 categoryId.includes(cat.id) || categoryId.includes(cat.slug);
               return (
